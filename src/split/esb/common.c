@@ -152,7 +152,7 @@ int zmk_split_esb_get_item(struct ring_buf *rx_buf, uint8_t *env, size_t env_siz
 
         uint32_t crc = crc32_ieee(env, payload_to_read);
 
-        if (crc != postfix.crc) {aea
+        if (crc != postfix.crc) {
             LOG_WRN("Data corruption in received peripheral event, ignoring %d vs %d", crc,
                     postfix.crc);
             return -EINVAL;
