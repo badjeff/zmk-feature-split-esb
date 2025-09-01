@@ -106,7 +106,7 @@ void zmk_split_esb_cb(app_esb_event_t *event, struct zmk_split_esb_async_state *
 }
 
 int zmk_split_esb_get_item(struct ring_buf *rx_buf, uint8_t *env, size_t env_size) {
-    while (ring_buf_size_get(rx_buf) > sizeof(struct esb_msg_prefix)) {
+    while (ring_buf_size_get(rx_buf) > sizeof(struct esb_msg_prefix) + + sizeof(struct esb_msg_postfix)) {
         struct esb_msg_prefix prefix;
 
         __ASSERT_EVAL(
@@ -118,7 +118,9 @@ int zmk_split_esb_get_item(struct ring_buf *rx_buf, uint8_t *env, size_t env_siz
                    sizeof(prefix.magic_prefix)) != 0) {
             uint8_t discarded_byte;
             ring_buf_get(rx_buf, &discarded_byte, 1);
-            // LOG_WRN("Prefix mismatch, discarding byte %0x", discarded_byte);
+
+            LOG_WRN("Prefix mismatch, discarding byte %0x", discarded_byte);
+            
             continue;
         }
 
@@ -130,7 +132,7 @@ int zmk_split_esb_get_item(struct ring_buf *rx_buf, uint8_t *env, size_t env_siz
             return -EINVAL;
         }
 
-        if (ring_buf_size_get(rx_buf) < payload_to_read) {
+        if (ring_buf_size_get(rx_buf) < payload_to_read + sizeof(struct esb_msg_postfix)) {
             return -EAGAIN;
         }
 
@@ -139,6 +141,22 @@ int zmk_split_esb_get_item(struct ring_buf *rx_buf, uint8_t *env, size_t env_siz
                       uint32_t read = ring_buf_get(rx_buf, env, payload_to_read),
                       read == payload_to_read,
                       "Somehow read less than we expect from the RX buffer");
+
+        struct esb_msg_postfix postfix;
+        __ASSERT_EVAL((void)ring_buf_get(rx_buf, (uint8_t *)&postfix, sizeof(postfix)),
+                      uint32_t read = ring_buf_get(rx_buf, (uint8_t *)&postfix, sizeof(postfix)),
+                      read == sizeof(postfix),
+                      "Somehow read less of the postfix than we expect from the RX buffer");
+
+        // LOG_HEXDUMP_DBG(&postfix, sizeof(postfix), "postfix");
+
+        uint32_t crc = crc32_ieee(env, payload_to_read);
+
+        if (crc != postfix.crc) {aea
+            LOG_WRN("Data corruption in received peripheral event, ignoring %d vs %d", crc,
+                    postfix.crc);
+            return -EINVAL;
+        }
 
         return 0;
     }

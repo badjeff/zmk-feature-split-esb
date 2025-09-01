@@ -30,8 +30,12 @@ LOG_MODULE_DECLARE(zmk, CONFIG_ZMK_SPLIT_ESB_LOG_LEVEL);
 #include "app_esb.h"
 #include "common.h"
 
-#define RX_BUFFER_SIZE (sizeof(struct esb_event_envelope) * CONFIG_ZMK_SPLIT_ESB_EVENT_BUFFER_ITEMS)
-#define TX_BUFFER_SIZE (sizeof(struct esb_command_envelope) * CONFIG_ZMK_SPLIT_ESB_CMD_BUFFER_ITEMS)
+#define RX_BUFFER_SIZE                                                                             \
+    ((sizeof(struct esb_event_envelope) + sizeof(struct esb_msg_postfix)) *                        \
+     CONFIG_ZMK_SPLIT_ESB_EVENT_BUFFER_ITEMS)
+#define TX_BUFFER_SIZE                                                                             \
+    ((sizeof(struct esb_command_envelope) + sizeof(struct esb_msg_postfix)) *                      \
+     CONFIG_ZMK_SPLIT_ESB_CMD_BUFFER_ITEMS)
 
 RING_BUF_DECLARE(rx_buf, RX_BUFFER_SIZE);
 RING_BUF_DECLARE(tx_buf, TX_BUFFER_SIZE);
@@ -115,6 +119,13 @@ static int split_central_esb_send_command(uint8_t source,
     size_t put = ring_buf_put(&tx_buf, (uint8_t *)&env, pfx_len);
     if (put != pfx_len) {
         LOG_WRN("Failed to put the whole message (%d vs %d)", put, pfx_len);
+    }
+
+    struct esb_msg_postfix postfix = {.crc = crc32_ieee((void *)&env, pfx_len)};
+
+    put = ring_buf_put(&tx_buf, (uint8_t *)&postfix, sizeof(postfix));
+    if (put != sizeof(postfix)) {
+        LOG_WRN("Failed to put the postfix (%d vs %d)", put, sizeof(postfix));
     }
 
     begin_tx();
