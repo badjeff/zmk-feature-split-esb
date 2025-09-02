@@ -253,7 +253,7 @@ int zmk_split_esb_set_enable(bool enabled) {
 
 int zmk_split_esb_send(app_esb_data_t *tx_packet) {
     int ret = 0;
-    static struct esb_payload tx_payload;
+    struct esb_payload tx_payload;
     tx_payload.pipe = 0;
 #if IS_ENABLED(CONFIG_ZMK_SPLIT_ESB_PROTO_TX_ACK)
     tx_payload.noack = false;
@@ -271,7 +271,7 @@ int zmk_split_esb_send(app_esb_data_t *tx_packet) {
     // *** deprecated pre-emptive queuing logic ***
     // if (ret == -EAGAIN || ret == -ENOMSG) {
     //     LOG_WRN("esb tx_payload_q full, popping first message and queueing again");
-    //     static struct esb_payload dicarded_payload;
+    //     struct esb_payload dicarded_payload;
     //     k_msgq_get(&m_msgq_tx_payloads, &dicarded_payload, K_NO_WAIT);
     //     ret = k_msgq_put(&m_msgq_tx_payloads, &tx_payload, K_NO_WAIT);
     // }
