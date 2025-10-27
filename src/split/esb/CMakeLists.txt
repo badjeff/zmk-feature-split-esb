@@ -20,3 +20,13 @@ else ()
     zephyr_library_sources(timeslot.c)
 endif()
 zephyr_library_include_directories(.)
+
+#---
+# add a pointer to "static void radio_dynamic_irq_handler(const void *args)" in nrf/subsys/esb/esb.c
+# to make it be accessible via "extern"
+#---
+file(READ   ${APPLICATION_SOURCE_DIR}/../nrf/subsys/esb/esb.c CONTENTS)
+if(NOT CONTENTS MATCHES "__ptr__radio_dynamic_irq_handler")
+    set(PATCH "void *__ptr__radio_dynamic_irq_handler = &radio_dynamic_irq_handler;\n")
+    file(APPEND ${APPLICATION_SOURCE_DIR}/../nrf/subsys/esb/esb.c "${PATCH}")
+endif()
