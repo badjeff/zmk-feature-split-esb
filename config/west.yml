@@ -22,7 +22,7 @@ manifest:
       #   sdk-nrf v3.1.1 + sdk-zephyr v4.1.99
       # revision: v3.1-branch
       remote: badjeff
-      revision: v3.1-branch--fix
+      revision: v3.1-branch+zmk-fixes
       path: nrf
     - name: nrfxlib
       remote: nrfconnect
