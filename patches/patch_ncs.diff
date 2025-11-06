@@ -1,0 +1,103 @@
+diff --git a/soc/nordic/nrf54l/Kconfig.defconfig.nrf54lm20a_enga_cpuapp b/soc/nordic/nrf54l/Kconfig.defconfig.nrf54lm20a_enga_cpuapp
+index 3534c8a9ba..0783a634b1 100644
+--- a/soc/nordic/nrf54l/Kconfig.defconfig.nrf54lm20a_enga_cpuapp
++++ b/soc/nordic/nrf54l/Kconfig.defconfig.nrf54lm20a_enga_cpuapp
+@@ -9,6 +9,7 @@ config NUM_IRQS
+ 	default 290
+ 
+ config UART_NRFX_UARTE_SPURIOUS_RXTO_WORKAROUND
++	bool ""
+ 	default y
+ 
+ endif # SOC_NRF54LM20A_ENGA_CPUAPP
+diff --git a/soc/nordic/nrf71/Kconfig.defconfig b/soc/nordic/nrf71/Kconfig.defconfig
+index 5f10c64b36..17bc81eaba 100644
+--- a/soc/nordic/nrf71/Kconfig.defconfig
++++ b/soc/nordic/nrf71/Kconfig.defconfig
+@@ -37,6 +37,7 @@ config BUILD_OUTPUT_ADJUST_LMA
+ endif # RISCV
+ 
+ config SYS_CLOCK_HW_CYCLES_PER_SEC
+-	default $(dt_nodelabel_int_prop,grtc,clock-frequency) if NRF_GRTC_TIMER
++	# default $(dt_nodelabel_int_prop,grtc,clock-frequency) if NRF_GRTC_TIMER
++	default 32768
+ 
+ endif # SOC_SERIES_NRF71X
+diff --git a/subsys/mpsl/clock_ctrl/Kconfig b/subsys/mpsl/clock_ctrl/Kconfig
+index e3f414aafe..267a944fd0 100644
+--- a/subsys/mpsl/clock_ctrl/Kconfig
++++ b/subsys/mpsl/clock_ctrl/Kconfig
+@@ -18,7 +18,7 @@ if MPSL_USE_EXTERNAL_CLOCK_CONTROL
+ 
+ config MPSL_EXT_CLK_CTRL_CLOCK_REQUEST_WAIT_TIMEOUT_MS
+ 	int "Timeout value that MPSL will wait for request to be completed by a clock driver, in milliseconds"
+-	default CLOCK_CONTROL_NRF_LFCLK_CLOCK_TIMEOUT_MS if CLOCK_CONTROL_NRF_LFCLK
++	# default CLOCK_CONTROL_NRF_LFCLK_CLOCK_TIMEOUT_MS if CLOCK_CONTROL_NRF_LFCLK
+ 	default 1000
+ 	help
+ 	  The option specifies a timeout value that MPSL clock control integration layer
+diff --git a/subsys/net/openthread/Kconfig.defconfig b/subsys/net/openthread/Kconfig.defconfig
+index 394e883724..7ca3ad9221 100644
+--- a/subsys/net/openthread/Kconfig.defconfig
++++ b/subsys/net/openthread/Kconfig.defconfig
+@@ -38,6 +38,7 @@ config MBEDTLS_SSL_CLI_ALLOW_WEAK_CERTIFICATE_VERIFICATION_WITHOUT_HOSTNAME
+ endif
+ 
+ config OPENTHREAD_PLATFORM_PKT_TXTIME
++	bool ""
+ 	default y if NET_PKT_TXTIME
+ 	default y if !NET_L2_OPENTHREAD
+ 
+@@ -62,9 +63,11 @@ endif # !NET_L2_OPENTHREAD
+ # In nrf-sdk, the init priority should be set to 90 to ensure that the OpenThread stack is
+ # initialized after MPSL.
+ config OPENTHREAD_SYS_INIT_PRIORITY
++  int ""
+ 	default 90
+ 
+ config OPENTHREAD_PLATFORM_CARRIER_FUNCTIONS
++	bool ""
+ 	default y if OPENTHREAD_DIAG && IEEE802154_CARRIER_FUNCTIONS
+ 	default y if OPENTHREAD_DIAG && NRF5_CARRIER_FUNCTIONS
+ 
+@@ -250,6 +253,7 @@ config ZMS_LOOKUP_CACHE_SIZE
+ 	default 512
+ 
+ config ZMS_LOOKUP_CACHE_FOR_SETTINGS
++	bool ""
+ 	default y
+ 
+ endif
+@@ -266,6 +270,7 @@ config NVS_LOOKUP_CACHE_SIZE
+ 	default 512
+ 
+ config NVS_LOOKUP_CACHE_FOR_SETTINGS
++	bool ""
+ 	default y
+ 
+ endif
+diff --git a/subsys/nrf_security/src/drivers/nrf_oberon/Kconfig b/subsys/nrf_security/src/drivers/nrf_oberon/Kconfig
+index 3f5c7e7329..23976e2887 100644
+--- a/subsys/nrf_security/src/drivers/nrf_oberon/Kconfig
++++ b/subsys/nrf_security/src/drivers/nrf_oberon/Kconfig
+@@ -1727,7 +1727,7 @@ config PSA_NEED_OBERON_CTR_DRBG_DRIVER
+ 	depends on PSA_ACCEL_GET_ENTROPY
+ 	depends on PSA_USE_CTR_DRBG_DRIVER && !PSA_ACCEL_GENERATE_RANDOM
+ 	select PSA_WANT_ALG_ECB_NO_PADDING
+-	select PSA_WANT_KEY_TYPE_AES
++	# select PSA_WANT_KEY_TYPE_AES
+ 
+ config PSA_NEED_OBERON_HMAC_DRBG_DRIVER
+ 	bool
+diff --git a/subsys/secure_storage/compatibility/Kconfig b/subsys/secure_storage/compatibility/Kconfig
+index ab209d3635..5071cd5067 100644
+--- a/subsys/secure_storage/compatibility/Kconfig
++++ b/subsys/secure_storage/compatibility/Kconfig
+@@ -73,6 +73,7 @@ config PSA_INTERNAL_TRUSTED_STORAGE_PREFIX
+ 	default "its"
+ 
+ config SECURE_STORAGE_ITS_STORE_SETTINGS_NAME_MAX_LEN
++	int ""
+ 	default 20
+ 
+ endif # SECURE_STORAGE_ITS_STORE_IMPLEMENTATION_SETTINGS
