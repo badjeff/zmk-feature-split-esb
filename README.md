@@ -45,18 +45,21 @@ Include this project on your ZMK's west manifest in `config/west.yml`:
   projects:
 +    - name: zmk-feature-split-esb
 +      remote: badjeff
-+      revision: main  
++      revision: main
 +    - name: sdk-nrf
-+      remote: nrfconnect
-+      revision: v2.6.4 # zephyr v3.5.99
++      remote: badjeff
++      revision: v3.1-branch+zmk-fixes
 +      path: nrf
 +    - name: nrfxlib
 +      remote: nrfconnect
-+      revision: v2.6.4
++      revision: v3.1-branch
 +      repo-path: sdk-nrfxlib
 +      path: nrfxlib
   [...]
 ```
+
+> [!NOTE]
+> Since ZMK 0.4 uses Zephyr 4.1, a patched version of NCS with couple default values is needed to pass CMake config validation. You could see what were patched in my NCS fork from [here](https://github.com/badjeff/sdk-nrf/commits/v3.1-branch%2Bzmk-fixes/).
 
 Update `{shield}.conf` to enable ESB Split Transport.
 ```conf
@@ -186,7 +189,7 @@ export NRFXLIB_MODULE_DIRS="../zmk-feature-split-esb/nrfxlib"
 export ZMK_ESB_MODULE_DIRS="../zmk-feature-split-esb"
 export ZMK_MODULE_DIRS="${ZMK_ESB_MODULE_DIRS};${NRF_MODULE_DIRS};${NRFXLIB_MODULE_DIRS}"
 export SHIELD="corne_left"
-export BOARD="nice_nano_v2"
+export BOARD="nice_nano@2.0.0"
 export ZMK_CONFIG_DIR="../zmk-config"
 west build -d "build/${SHIELD}" -b "${BOARD}" -S zmk-usb-logging -- \
   -DZMK_EXTRA_MODULES="${ZMK_MODULE_DIRS}" \

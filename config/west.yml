@@ -3,6 +3,8 @@
 
 manifest:
   remotes:
+    - name: badjeff
+      url-base: https://github.com/badjeff
     - name: zmkfirmware
       url-base: https://github.com/zmkfirmware
     - name: nrfconnect
@@ -13,12 +15,18 @@ manifest:
       revision: main
       import: app/west.yml
     - name: sdk-nrf
-      remote: nrfconnect
-      revision: v2.6.4 # zephyr v3.5.99
+      # remote: nrfconnect
+      # align to commit:
+      #   https://github.com/nrfconnect/sdk-zephyr/blob/ffdab1b6b90658e0a9fc9a3ae64e45e37c3e9386/VERSION
+      #   https://github.com/nrfconnect/sdk-nrf/commit/e50881920d7be8132024e1732dee3960fcac9829
+      #   sdk-nrf v3.1.1 + sdk-zephyr v4.1.99
+      # revision: v3.1-branch
+      remote: badjeff
+      revision: v3.1-branch+zmk-fixes
       path: nrf
     - name: nrfxlib
       remote: nrfconnect
-      revision: v2.6.4
+      revision: v3.1-branch
       repo-path: sdk-nrfxlib
       path: nrfxlib
   self:
