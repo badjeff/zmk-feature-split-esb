@@ -45,18 +45,21 @@ Include this project on your ZMK's west manifest in `config/west.yml`:
   projects:
 +    - name: zmk-feature-split-esb
 +      remote: badjeff
-+      revision: main  
++      revision: main
 +    - name: sdk-nrf
-+      remote: nrfconnect
-+      revision: v3.1.0
++      remote: badjeff
++      revision: v3.1-branch+zmk-fixes
 +      path: nrf
 +    - name: nrfxlib
 +      remote: nrfconnect
-+      revision: v3.1.0
++      revision: v3.1-branch
 +      repo-path: sdk-nrfxlib
 +      path: nrfxlib
   [...]
 ```
+
+> [!NOTE]
+> Since ZMK 0.4 uses Zephyr 4.1, a patched version of NCS with couple default values is needed to pass CMake config validation. You could see what were patched in my NCS fork from [here](https://github.com/badjeff/sdk-nrf/commits/v3.1-branch%2Bzmk-fixes/).
 
 Update `{shield}.conf` to enable ESB Split Transport.
 ```conf
