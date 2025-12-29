@@ -116,12 +116,13 @@ int zmk_split_esb_get_item(struct ring_buf *rx_buf, uint8_t *env, size_t env_siz
 
         if (memcmp(&prefix.magic_prefix, &ZMK_SPLIT_ESB_ENVELOPE_MAGIC_PREFIX,
                    sizeof(prefix.magic_prefix)) != 0) {
-            uint8_t discarded_byte;
-            ring_buf_get(rx_buf, &discarded_byte, 1);
-
-            LOG_WRN("Prefix mismatch, discarding byte %0x", discarded_byte);
-            
-            continue;
+            // uint8_t discarded_byte;
+            // ring_buf_get(rx_buf, &discarded_byte, 1);
+            // LOG_WRN("Prefix mismatch, discarding byte %0x", discarded_byte);
+            // continue;
+            LOG_WRN("Prefix mismatch, discarding all bytes");
+            ring_buf_reset(rx_buf);
+            return -EINVAL;
         }
 
         size_t payload_to_read = sizeof(prefix) + prefix.payload_size;
@@ -129,6 +130,7 @@ int zmk_split_esb_get_item(struct ring_buf *rx_buf, uint8_t *env, size_t env_siz
         if (payload_to_read > env_size) {
             LOG_WRN("Invalid message with payload %d bigger than expected max %d", payload_to_read,
                     env_size);
+            ring_buf_reset(rx_buf);
             return -EINVAL;
         }
 

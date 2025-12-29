@@ -184,7 +184,7 @@ static int pull_packet_from_tx_msgq(void) {
         ret = esb_write_payload(&tx_payload);
 
         if (ret == -ENOMEM) {
-            LOG_WRN("esb_tx_fifo: queue full %d", que_was_fulled);
+            // LOG_WRN("esb_tx_fifo: queue full %d", que_was_fulled);
 
             // *** deprecated pre-emptive queuing logic ***
             // LOG_DBG("esb_tx_fifo: queue full, popping first message and queueing again");
