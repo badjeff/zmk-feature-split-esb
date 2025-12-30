@@ -9,27 +9,33 @@ This work is based on [zmk,wired-split](https://github.com/zmkfirmware/zmk/tree/
 
 This module uses [nRF Connect SDK (NCS)](https://docs.nordicsemi.com/bundle/ncs-latest/page/nrf/index.html) ESB implementation as communication protocol between ZMK central and peripherals, instead of Zephyr BLE stack. The protocol implementation is supporting two-way data packet communication, packet buffering, packet acknowledgment, and automatic retransmission, etc. All devices could be communicated with predefined semantic address. 
 
-This module also uses [Multi-Protocol Service Layer (MPSL)](https://docs.nordicsemi.com/bundle/ncs-latest/page/nrf/protocols/multiprotocol/index.html) library which provides services for multiprotocol applications that allows the nRF5 radio driver to negotiate for transmission timeslots. As result, ZMK central allows to pair BLE host as conventional HID input device (keyboard & mouse) and act as an ESB transceiver simultaneously. And all ZMK peripherals talk to ZMK central over ESB only with reduced packet overhead.
+This module also uses [Multi-Protocol Service Layer (MPSL)](https://docs.nordicsemi.com/bundle/ncs-latest/page/nrf/protocols/multiprotocol/index.html) library which provides services for multiprotocol applications that allows the nRF5 radio driver to negotiate for transmission timeslots. 
 
-However, the MCU embedded radio controller in nRF52840 (which i used to develop on) doesn't have enough resource to establish ESB connection and perform BLE advertising & scanning between central and peripheral at the same time.
+> UPDATE FOR ZMK 0.4: I'm too stupid to make BLE security libraries in NCS 3.1 be compiled on Zephye 4.1.
 
-In short, central doesn't have timeslots to scan peripherals, and peripheral doesn't have timeslots to advertising itself to central. But, central has configed as ESB Primarily Receiver (PRX) and it has free timeslots to advertise itself to HID host.
+~~As result, ZMK central allows to pair BLE host as conventional HID input device (keyboard & mouse) and act as an ESB transceiver simultaneously.~~
+
+And all ZMK peripherals talk to ZMK central over ESB only with reduced packet overhead.
+
+~~However, the MCU embedded radio controller in nRF52840 (which i used to develop on) doesn't have enough resource to establish ESB connection and perform BLE advertising & scanning between central and peripheral at the same time.~~
+
+~~In short, central doesn't have timeslots to scan peripherals, and peripheral doesn't have timeslots to advertising itself to central. But, central has configed as ESB Primarily Receiver (PRX) and it has free timeslots to advertise itself to HID host.~~
 
 ### TL;DR;
-This module has two topologies.
+This module has ~~two~~one topologies.
 - USB-only Dongle with ONLY ESB is enabling.
    - Dongle connects to HID host via USB.
    - Peripherals connects to Dongle via ESB with same ESB arbitrary address.
    - Min latency is 1ms.
    - Power consumption on TX is a bit less than BLE in long term, it does not keep connected to RX.
    - Sample *zmk-config* for a [Corne 36 keys](https://github.com/foostan/crkbd) with couple [pointabella](https://github.com/badjeff/pointabella) variants and [moudabella](https://github.com/badjeff/moudabella) could be find at [here](https://github.com/badjeff/zmk-config/tree/main/config/boards/shields/donki36).
-- Wireless Split Central or Dongle, with BOTH BLE and ESB is enabling.
-   - Split Central pairs to HID host via BLE.
-   - Split Peripherals connects to Split Central via ESB.
-   - Min latency is 7.5ms + 1ms.
-   - Power consumption is about 7.5mA @ 4.0v on central, v.s. 0.65mA with only BLE enabling.
-   - Split Central is limited be pairing to **single** BLE host on nRF52840.
-     *(NOTE: There is not enough radio resource to perform BLE advertising once it is connected to a paired host. Not tested on nRF53/54)*
+- ~~Wireless Split Central or Dongle, with BOTH BLE and ESB is enabling.~~
+   - ~~Split Central pairs to HID host via BLE.~~
+   - ~~Split Peripherals connects to Split Central via ESB.~~
+   - ~~Min latency is 7.5ms + 1ms.~~
+   - ~~Power consumption is about 7.5mA @ 4.0v on central, v.s. 0.65mA with only BLE enabling.~~
+   - ~~Split Central is limited be pairing to **single** BLE host on nRF52840.
+     *(NOTE: There is not enough radio resource to perform BLE advertising once it is connected to a paired host. Not tested on nRF53/54)*~~
 
 
 ## Installation
@@ -64,7 +70,7 @@ Include this project on your ZMK's west manifest in `config/west.yml`:
 Update `{shield}.conf` to enable ESB Split Transport.
 ```conf
 # disable BLE on peripheral
-# NOTE: keep default (=y) if want to pairing BLE host on split central, or wireless dongle
+# (DEPRECATED) NOTE: keep default (=y) if want to pairing BLE host on split central, or wireless dongle
 CONFIG_ZMK_BLE=n
 
 # disable default split transport on central and peripheral
@@ -127,6 +133,9 @@ CONFIG_ZMK_SPLIT_BLE_CENTRAL_PERIPHERALS=2
 
 # for battery reporting on TX
 CONFIG_ZMK_BATTERY_REPORTING=y
+
+# Put on dongle (central side) could help maxing out HID reports via USB (although it looks like its BLE related)
+CONFIG_ZMK_BLE_MOUSE_REPORT_QUEUE_SIZE=1
 ```
 
 And, add ESB arbitrary address to `{shield}.overlay` of your central and peripherals.
