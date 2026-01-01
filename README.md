@@ -133,9 +133,6 @@ CONFIG_ZMK_SPLIT_BLE_CENTRAL_PERIPHERALS=2
 
 # for battery reporting on TX
 CONFIG_ZMK_BATTERY_REPORTING=y
-
-# Put on dongle (central side) could help maxing out HID reports via USB (although it looks like its BLE related)
-CONFIG_ZMK_BLE_MOUSE_REPORT_QUEUE_SIZE=1
 ```
 
 And, add ESB arbitrary address to `{shield}.overlay` of your central and peripherals.
