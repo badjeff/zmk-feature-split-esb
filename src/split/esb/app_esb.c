@@ -213,6 +213,8 @@ static int pull_packet_from_tx_msgq(void) {
 
         } else if (ret) {
             LOG_WRN("esb_write_payload failed (%d)", ret);
+            // dequeue FIFO msg
+            k_msgq_get(&m_msgq_tx_payloads, &tx_payload, K_NO_WAIT);
 
         } else {
             // LOG_DBG("Payload len: %d", tx_payload.length);
