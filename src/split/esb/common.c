@@ -39,10 +39,11 @@ void zmk_split_esb_async_tx(struct zmk_split_esb_async_state *state) {
     // LOG_DBG("tx_buf_len: %d, claim_len: %d", tx_buf_len, claim_len);
     // LOG_HEXDUMP_DBG(buf, claim_len, "buf");
 
-    static app_esb_data_t my_data;
-    my_data.data = buf;
-    my_data.len = claim_len;
-    zmk_split_esb_send(&my_data); // callback > zmk_split_esb_cb()
+    app_esb_data_t tx_data = {
+        .data = buf,
+        .len = claim_len
+    };
+    zmk_split_esb_send(&tx_data); // callback > zmk_split_esb_cb()
 
     // LOG_DBG("ESB TX Buf finish %d", claim_len);
     ring_buf_get_finish(state->tx_buf, claim_len);

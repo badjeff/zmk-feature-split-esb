@@ -83,9 +83,9 @@ static void event_handler(struct esb_evt const *event) {
         case ESB_EVENT_RX_RECEIVED:
             // LOG_DBG("RX SUCCESS");
             struct esb_payload rx_payload;
-            uint8_t buf[CONFIG_ESB_MAX_PAYLOAD_LENGTH];
-            if (esb_read_rx_payload(&rx_payload) == 0) {
+            while (esb_read_rx_payload(&rx_payload) == 0) {
                 // LOG_DBG("Chunk %d, len: %d", rx_payload.pid, rx_payload.length);
+                uint8_t buf[CONFIG_ESB_MAX_PAYLOAD_LENGTH];
                 memcpy(buf, rx_payload.data, rx_payload.length);
                 // LOG_DBG("Packet len: %d", rx_payload.length);
                 m_event.evt_type = APP_ESB_EVT_RX;
@@ -177,8 +177,13 @@ static int esb_initialize(app_esb_mode_t mode) {
 
 static int pull_packet_from_tx_msgq(void) {
     int ret = 0;
+    int esb_ret;
     struct esb_payload tx_payload;
     static uint8_t que_was_fulled = 0;
+
+    if (!esb_is_idle()) {
+        return -EBUSY;
+    }
 
     if (k_msgq_peek(&m_msgq_tx_payloads, &tx_payload) == 0) {
         ret = esb_write_payload(&tx_payload);
@@ -218,14 +223,22 @@ static int pull_packet_from_tx_msgq(void) {
 
         } else {
             // LOG_DBG("Payload len: %d", tx_payload.length);
-            esb_start_tx();
-            // dequeue FIFO msg
+            esb_ret = esb_start_tx();
+            if (esb_ret == -EBUSY) {
+                LOG_DBG("ESB busy, will retry on next event");
+                return -EBUSY;
+            } else if (esb_ret == -ENODATA) {
+                LOG_DBG("ESB TX FIFO empty");
+                return 0;
+            } else if (esb_ret < 0) {
+                LOG_ERR("esb_start_tx failed (%d)", esb_ret);
+                return esb_ret;
+            }
             k_msgq_get(&m_msgq_tx_payloads, &tx_payload, K_NO_WAIT);
             que_was_fulled = 0;
         }
     }
 
-    esb_start_tx();
     return ret;
 }
 
