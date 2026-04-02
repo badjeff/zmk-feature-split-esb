@@ -20,6 +20,10 @@ config ZMK_SPLIT_ESB_PERIPHERAL_ID
     int "Default peripheral id for TX"
     default 0
 
+config ZMK_SPLIT_ESB_PERIPHERAL_COUNT
+    int "Override peripheral count for RX in central.h (zero to disable overriding)"
+    default 0
+
 config ZMK_SPLIT_ESB_PROTO_TX_ACK
     bool "Await ACK signal per sending packet for TX/RX"
     default y

@@ -21,6 +21,29 @@ else ()
 endif()
 zephyr_library_include_directories(.)
 
+set(CENTRAL_H "${APPLICATION_SOURCE_DIR}/../app/include/zmk/split/central.h")
+file(READ "${CENTRAL_H}" CONTENTS)
+set(DEFAULT_LINE "#define ZMK_SPLIT_CENTRAL_PERIPHERAL_COUNT MAX(BLE_PERIPHERAL_COUNT, WIRED_PERIPHERAL_COUNT)")
+if(CONFIG_ZMK_SPLIT_ESB_PERIPHERAL_COUNT GREATER 0)
+    message(STATUS "ESB peripheral count is > 0")
+    set(NEW_LINE "#define ZMK_SPLIT_CENTRAL_PERIPHERAL_COUNT ${CONFIG_ZMK_SPLIT_ESB_PERIPHERAL_COUNT}")
+else()
+    message(STATUS "Restoring default peripheral count")
+    set(NEW_LINE "${DEFAULT_LINE}")
+endif()
+# Replace the whole line
+string(REGEX REPLACE
+    "#define[ \t]+ZMK_SPLIT_CENTRAL_PERIPHERAL_COUNT[^\r\n]*"
+    "${NEW_LINE}"
+    CONTENTS_MODIFIED
+    "${CONTENTS}"
+)
+# Only write if changed
+if(NOT CONTENTS STREQUAL CONTENTS_MODIFIED)
+    file(WRITE "${CENTRAL_H}" "${CONTENTS_MODIFIED}")
+    message(STATUS "central.h updated")
+endif()
+
 #---
 # add a pointer to "static void radio_dynamic_irq_handler(const void *args)" in nrf/subsys/esb/esb.c
 # to make it be accessible via "extern"

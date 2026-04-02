@@ -49,9 +49,10 @@ uint8_t esb_addr_prefix[4] = DT_INST_PROP(0, addr_prefix);
 
 static app_esb_callback_t m_callback;
 
-// Retry table for tracking message retries
+// Retry table for tracking message retries (includes payload for rebuild)
 static uint16_t m_retry_msg_ids[CONFIG_ZMK_SPLIT_ESB_PROTO_MSGQ_ITEMS];
 static uint8_t m_retry_left[CONFIG_ZMK_SPLIT_ESB_PROTO_MSGQ_ITEMS];
+static struct esb_payload m_retry_payloads[CONFIG_ZMK_SPLIT_ESB_PROTO_MSGQ_ITEMS];
 static uint16_t m_current_tx_msg_id;
 
 // Track msgq full errors
@@ -78,11 +79,14 @@ static int find_empty_retry_slot(void) {
     return find_retry_by_msg_id(0);
 }
 
-static int add_retry_entry(uint16_t message_id, uint8_t max_retry) {
+static int add_retry_entry(uint16_t message_id, uint8_t max_retry, struct esb_payload *payload) {
     int idx = find_empty_retry_slot();
     if (idx >= 0) {
         m_retry_msg_ids[idx] = message_id;
         m_retry_left[idx] = max_retry;
+        if (payload) {
+            memcpy(&m_retry_payloads[idx], payload, sizeof(struct esb_payload));
+        }
     }
     return idx;
 }
@@ -92,6 +96,7 @@ static void remove_retry_entry_by_msg_id(uint16_t message_id) {
     if (idx >= 0) {
         m_retry_msg_ids[idx] = 0;
         m_retry_left[idx] = 0;
+        memset(&m_retry_payloads[idx], 0, sizeof(struct esb_payload));
     }
 }
 
@@ -103,11 +108,21 @@ static uint8_t get_retry_left_by_msg_id(uint16_t message_id) {
     return 0;
 }
 
-static void decrement_retry_by_msg_id(uint16_t message_id) {
+static uint8_t decrement_retry_by_msg_id(uint16_t message_id) {
     int idx = find_retry_by_msg_id(message_id);
     if (idx >= 0 && m_retry_left[idx] > 0) {
         m_retry_left[idx]--;
     }
+    return (idx >= 0) ? m_retry_left[idx] : 0;
+}
+
+static bool get_retry_payload_by_msg_id(uint16_t message_id, struct esb_payload *payload) {
+    int idx = find_retry_by_msg_id(message_id);
+    if (idx >= 0 && payload) {
+        memcpy(payload, &m_retry_payloads[idx], sizeof(struct esb_payload));
+        return true;
+    }
+    return false;
 }
 
 // Define a buffer of payloads to store TX payloads in between timeslots
@@ -139,8 +154,22 @@ static void event_handler(struct esb_evt const *event) {
         case ESB_EVENT_TX_FAILED:
             LOG_WRN("TX FAILED, tx_attempts: %d", event->tx_attempts);
             // Check retry count for failed message
-            decrement_retry_by_msg_id(m_current_tx_msg_id);
-            LOG_WRN("Retry left for msg %d: %d", m_current_tx_msg_id, get_retry_left_by_msg_id(m_current_tx_msg_id));
+            uint8_t retry_left = decrement_retry_by_msg_id(m_current_tx_msg_id);
+            LOG_WRN("Retry left for msg %d: %d", m_current_tx_msg_id, retry_left);
+
+            // Re-insert failed payload into msgq for retry in next cycle
+            if (retry_left > 0) {
+                struct esb_payload retry_payload;
+                if (get_retry_payload_by_msg_id(m_current_tx_msg_id, &retry_payload)) {
+                    int requeue_ret = k_msgq_put(&m_msgq_tx_payloads, &retry_payload, K_NO_WAIT);
+                    if (requeue_ret == 0) {
+                        LOG_WRN("Re-queued payload from retry table for retry");
+                    } else if (requeue_ret == -ENOMSG) {
+                        LOG_WRN("Msgq full, cannot re-queue payload from retry table");
+                    }
+                }
+            }
+
             // esb_flush_tx(); // DOUH, had fixed @ 3.1.0-rc1, not ready yet.
             // Forward an event to the application
             m_event.evt_type = APP_ESB_EVT_TX_FAIL;
@@ -291,9 +320,12 @@ static int pull_packet_from_tx_msgq(void) {
         } else if (ret) {
             LOG_WRN("esb_write_payload failed (%d)", ret);
             // Check if we should retry before removing
-            if (get_retry_left_by_msg_id(m_current_tx_msg_id) > 0) {
-                // Don't dequeue, will retry on next pull
-                LOG_WRN("Will retry, retry_left=%d", get_retry_left_by_msg_id(m_current_tx_msg_id));
+            uint8_t retry_left = get_retry_left_by_msg_id(m_current_tx_msg_id);
+            if (retry_left > 0) {
+                // Dequeue from msgq, payload already cached in retry table
+                k_msgq_get(&m_msgq_tx_payloads, &tx_payload, K_NO_WAIT);
+                LOG_WRN("Payload dequeued, retry_left=%d", retry_left);
+                // Don't write to ESB, will retry via event_handler in next cycle
             } else {
                 // dequeue FIFO msg
                 k_msgq_get(&m_msgq_tx_payloads, &tx_payload, K_NO_WAIT);
@@ -362,7 +394,7 @@ int zmk_split_esb_send(app_esb_data_t *tx_packet) {
     ret = k_msgq_put(&m_msgq_tx_payloads, &tx_payload, K_NO_WAIT);
 
     if (ret == 0) {
-        int idx = add_retry_entry(tx_packet->message_id, tx_packet->max_retry);
+        int idx = add_retry_entry(tx_packet->message_id, tx_packet->max_retry, &tx_payload);
         if (idx >= 0) {
             m_current_tx_msg_id = tx_packet->message_id;
         }

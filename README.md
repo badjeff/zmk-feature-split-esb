@@ -84,6 +84,13 @@ CONFIG_ZMK_SPLIT_ESB=y
 # default zero. give an integer (<256) on all peripheral(s)
 CONFIG_ZMK_SPLIT_ESB_PERIPHERAL_ID=1
 
+# override ZMK_SPLIT_CENTRAL_PERIPHERAL_COUNT in /app/include/zmk/split/central.h
+# (for storing battery state on central)
+# NOTE: must >= max(CONFIG_ZMK_SPLIT_ESB_PERIPHERAL_ID)
+#       use with CONFIG_ZMK_BATTERY_REPORTING=y
+#                CONFIG_ZMK_SPLIT_BLE_CENTRAL_BATTERY_LEVEL_FETCHING=y
+CONFIG_ZMK_SPLIT_ESB_PERIPHERAL_COUNT=0
+
 # enable ESB TX send request packet payload with ACK bit
 # ESB protocol has built-in retransmit counter (default one), if RX does not response ACK properly.
 # disable this iif you are pursuing extreme low latency, not much different in real-life.
