@@ -86,6 +86,9 @@ static int split_central_esb_send_command(uint8_t source,
     }
 
     // lock it for a safe result from ring_buf_space_get()
+    // NOTE: esb_send_cmd_sem is safe:
+    // - Called from application thread, not ISR
+    // - begin_tx() releases semaphore before returning
     int ret = k_sem_take(&esb_send_cmd_sem, K_FOREVER);
     if (ret) {
         LOG_WRN("Shouldn't be called FOREVER");

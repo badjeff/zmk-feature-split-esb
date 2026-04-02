@@ -94,6 +94,9 @@ split_peripheral_esb_report_event(const struct zmk_split_transport_peripheral_ev
     }
 
     // lock it for a safe result from ring_buf_space_get()
+    // NOTE: esb_send_evt_sem is safe:
+    // - Called from application thread, not ISR
+    // - begin_tx() releases semaphore before returning
     int ret = k_sem_take(&esb_send_evt_sem, K_FOREVER);
     if (ret) {
         LOG_WRN("Shouldn't be called FOREVER");
@@ -210,13 +213,13 @@ static void process_tx_cb(void) {
                 if (env.payload.source != peripheral_id) {
                     LOG_WRN("Ignoring command type %d for source %d (expect %d)", 
                             env.payload.cmd.type, env.payload.source, peripheral_id);
-                    return;
+                    continue;
                 }
 
                 int ret = k_msgq_put(&cmd_msg_queue, &env.payload.cmd, K_NO_WAIT);
                 if (ret < 0) {
                     LOG_WRN("Failed to queue command for processing (%d)", ret);
-                    return;
+                    continue;
                 }
 
                 k_work_submit(&publish_commands);
@@ -226,7 +229,7 @@ static void process_tx_cb(void) {
             return;
         default:
             LOG_WRN("Issue fetching an item from the RX buffer: %d", item_err);
-            return;
+            continue;
         }
     }
 }

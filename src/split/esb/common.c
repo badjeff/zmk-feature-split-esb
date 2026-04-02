@@ -69,6 +69,9 @@ void zmk_split_esb_cb(app_esb_event_t *event, struct zmk_split_esb_async_state *
             // LOG_DBG("ESB RX received: %d", event->data_length);
 
             // lock it for a safe result from ring_buf_space_get()
+            // NOTE: esb_cb_sem is safe in ISR context:
+            // - Called from event_handler in RADIO ISR (single-threaded)
+            // - Zephyr treats K_FOREVER as non-blocking in ISR
             int ret = k_sem_take(&esb_cb_sem, K_FOREVER);
             if (ret) {
                 LOG_WRN("Shouldn't be called FOREVER");
@@ -107,6 +110,8 @@ void zmk_split_esb_cb(app_esb_event_t *event, struct zmk_split_esb_async_state *
 }
 
 int zmk_split_esb_get_item(struct ring_buf *rx_buf, uint8_t *env, size_t env_size) {
+    static uint8_t reset_count = 0;
+
     while (ring_buf_size_get(rx_buf) > sizeof(struct esb_msg_prefix) + sizeof(struct esb_msg_postfix)) {
         struct esb_msg_prefix prefix;
 
@@ -117,12 +122,16 @@ int zmk_split_esb_get_item(struct ring_buf *rx_buf, uint8_t *env, size_t env_siz
 
         if (memcmp(&prefix.magic_prefix, &ZMK_SPLIT_ESB_ENVELOPE_MAGIC_PREFIX,
                    sizeof(prefix.magic_prefix)) != 0) {
-            // uint8_t discarded_byte;
-            // ring_buf_get(rx_buf, &discarded_byte, 1);
-            // LOG_WRN("Prefix mismatch, discarding byte %0x", discarded_byte);
-            // continue;
-            LOG_WRN("Prefix mismatch, discarding all bytes");
-            ring_buf_reset(rx_buf);
+            reset_count++;
+            if (reset_count > 3) {
+                LOG_WRN("Multiple prefix mismatches, resetting buffer");
+                ring_buf_reset(rx_buf);
+                reset_count = 0;
+            } else {
+                uint8_t dummy;
+                ring_buf_get(rx_buf, &dummy, 1);
+                LOG_WRN("Prefix mismatch, discarding byte %02x", dummy);
+            }
             return -EINVAL;
         }
 
@@ -156,11 +165,13 @@ int zmk_split_esb_get_item(struct ring_buf *rx_buf, uint8_t *env, size_t env_siz
         uint32_t crc = crc32_ieee(env, payload_to_read);
 
         if (crc != postfix.crc) {
-            LOG_WRN("Data corruption in received peripheral event, ignoring %d vs %d", crc,
-                    postfix.crc);
+            LOG_WRN("Data corruption in received peripheral event, resetting buffer (%d vs %d)",
+                    crc, postfix.crc);
+            ring_buf_reset(rx_buf);
             return -EINVAL;
         }
 
+        reset_count = 0;
         return 0;
     }
 

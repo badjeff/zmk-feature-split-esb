@@ -82,6 +82,10 @@ static void event_handler(struct esb_evt const *event) {
             break;
         case ESB_EVENT_RX_RECEIVED:
             // LOG_DBG("RX SUCCESS");
+            // NOTE: Stack buffer is safe here because:
+            // 1. event_handler is called from RADIO ISR context (not parallel)
+            // 2. m_callback executes synchronously within the same ISR
+            // 3. zmk_split_esb_cb processes event immediately, no deferral
             struct esb_payload rx_payload;
             while (esb_read_rx_payload(&rx_payload) == 0) {
                 // LOG_DBG("Chunk %d, len: %d", rx_payload.pid, rx_payload.length);
