@@ -49,6 +49,64 @@ uint8_t esb_addr_prefix[4] = DT_INST_PROP(0, addr_prefix);
 
 static app_esb_callback_t m_callback;
 
+// Retry table for tracking message retries
+static uint16_t m_retry_msg_ids[CONFIG_ZMK_SPLIT_ESB_PROTO_MSGQ_ITEMS];
+static uint8_t m_retry_left[CONFIG_ZMK_SPLIT_ESB_PROTO_MSGQ_ITEMS];
+static uint16_t m_current_tx_msg_id;
+
+static void clear_retry_table(void) {
+    for (int i = 0; i < CONFIG_ZMK_SPLIT_ESB_PROTO_MSGQ_ITEMS; i++) {
+        m_retry_msg_ids[i] = 0;
+        m_retry_left[i] = 0;
+    }
+    m_current_tx_msg_id = 0;
+}
+
+static int find_retry_by_msg_id(uint16_t message_id) {
+    for (int i = 0; i < CONFIG_ZMK_SPLIT_ESB_PROTO_MSGQ_ITEMS; i++) {
+        if (m_retry_msg_ids[i] == message_id) {
+            return i;
+        }
+    }
+    return -1;
+}
+
+static int find_empty_retry_slot(void) {
+    return find_retry_by_msg_id(0);
+}
+
+static int add_retry_entry(uint16_t message_id, uint8_t max_retry) {
+    int idx = find_empty_retry_slot();
+    if (idx >= 0) {
+        m_retry_msg_ids[idx] = message_id;
+        m_retry_left[idx] = max_retry;
+    }
+    return idx;
+}
+
+static void remove_retry_entry_by_msg_id(uint16_t message_id) {
+    int idx = find_retry_by_msg_id(message_id);
+    if (idx >= 0) {
+        m_retry_msg_ids[idx] = 0;
+        m_retry_left[idx] = 0;
+    }
+}
+
+static uint8_t get_retry_left_by_msg_id(uint16_t message_id) {
+    int idx = find_retry_by_msg_id(message_id);
+    if (idx >= 0) {
+        return m_retry_left[idx];
+    }
+    return 0;
+}
+
+static void decrement_retry_by_msg_id(uint16_t message_id) {
+    int idx = find_retry_by_msg_id(message_id);
+    if (idx >= 0 && m_retry_left[idx] > 0) {
+        m_retry_left[idx]--;
+    }
+}
+
 // Define a buffer of payloads to store TX payloads in between timeslots
 K_MSGQ_DEFINE(m_msgq_tx_payloads, sizeof(struct esb_payload), 
               CONFIG_ZMK_SPLIT_ESB_PROTO_MSGQ_ITEMS, 4);
@@ -67,6 +125,9 @@ static void event_handler(struct esb_evt const *event) {
         case ESB_EVENT_TX_SUCCESS:
             // LOG_DBG("TX SUCCESS, tx_attempts: %d", event->tx_attempts);
             // LOG_DBG("give d1");
+            // Clear retry entry for the message that succeeded
+            remove_retry_entry_by_msg_id(m_current_tx_msg_id);
+            m_current_tx_msg_id = 0;
             // Forward an event to the application
             m_event.evt_type = APP_ESB_EVT_TX_SUCCESS;
             m_callback(&m_event);
@@ -74,6 +135,9 @@ static void event_handler(struct esb_evt const *event) {
             break;
         case ESB_EVENT_TX_FAILED:
             LOG_WRN("TX FAILED, tx_attempts: %d", event->tx_attempts);
+            // Check retry count for failed message
+            decrement_retry_by_msg_id(m_current_tx_msg_id);
+            LOG_WRN("Retry left for msg %d: %d", m_current_tx_msg_id, get_retry_left_by_msg_id(m_current_tx_msg_id));
             // esb_flush_tx(); // DOUH, had fixed @ 3.1.0-rc1, not ready yet.
             // Forward an event to the application
             m_event.evt_type = APP_ESB_EVT_TX_FAIL;
@@ -219,11 +283,18 @@ static int pull_packet_from_tx_msgq(void) {
                     tx_payload.length, CONFIG_ESB_MAX_PAYLOAD_LENGTH);
             // dequeue FIFO msg
             k_msgq_get(&m_msgq_tx_payloads, &tx_payload, K_NO_WAIT);
+            remove_retry_entry_by_msg_id(m_current_tx_msg_id);
 
         } else if (ret) {
             LOG_WRN("esb_write_payload failed (%d)", ret);
-            // dequeue FIFO msg
-            k_msgq_get(&m_msgq_tx_payloads, &tx_payload, K_NO_WAIT);
+            // Check if we should retry before removing
+            if (get_retry_left_by_msg_id(m_current_tx_msg_id) > 0) {
+                // Don't dequeue, will retry on next pull
+                LOG_WRN("Will retry, retry_left=%d", get_retry_left_by_msg_id(m_current_tx_msg_id));
+            } else {
+                // dequeue FIFO msg
+                k_msgq_get(&m_msgq_tx_payloads, &tx_payload, K_NO_WAIT);
+            }
 
         } else {
             // LOG_DBG("Payload len: %d", tx_payload.length);
@@ -287,14 +358,12 @@ int zmk_split_esb_send(app_esb_data_t *tx_packet) {
     }
     ret = k_msgq_put(&m_msgq_tx_payloads, &tx_payload, K_NO_WAIT);
 
-    // *** deprecated pre-emptive queuing logic ***
-    // if (ret == -EAGAIN || ret == -ENOMSG) {
-    //     LOG_WRN("esb tx_payload_q full, popping first message and queueing again");
-    //     struct esb_payload dicarded_payload;
-    //     k_msgq_get(&m_msgq_tx_payloads, &dicarded_payload, K_NO_WAIT);
-    //     ret = k_msgq_put(&m_msgq_tx_payloads, &tx_payload, K_NO_WAIT);
-    // }
-
+    if (ret == 0) {
+        int idx = add_retry_entry(tx_packet->message_id, tx_packet->max_retry);
+        if (idx >= 0) {
+            m_current_tx_msg_id = tx_packet->message_id;
+        }
+    }
     if (ret != 0) {
         LOG_WRN("Failed to queue esb tx_payload_q (%d)", ret);
     }
@@ -341,6 +410,7 @@ static int app_esb_resume(void) {
     if(m_mode == APP_ESB_MODE_PTX) {
         int err = esb_initialize(m_mode);
         m_active = true;
+        clear_retry_table();
         pull_packet_from_tx_msgq();
         return err;
     }

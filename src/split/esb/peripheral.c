@@ -42,6 +42,8 @@ RING_BUF_DECLARE(chosen_tx_buf, TX_BUFFER_SIZE);
 
 static K_SEM_DEFINE(esb_send_evt_sem, 1, 1);
 
+static uint16_t message_id = 0;
+
 static const uint8_t peripheral_id = CONFIG_ZMK_SPLIT_ESB_PERIPHERAL_ID;
 
 static void publish_commands_work(struct k_work *work);
@@ -82,6 +84,21 @@ static ssize_t get_payload_data_size(const struct zmk_split_transport_peripheral
         return sizeof(evt->data.battery_event);
     default:
         return -ENOTSUP;
+    }
+}
+
+static uint8_t get_retry_count(const struct zmk_split_transport_peripheral_event *evt) {
+    switch (evt->type) {
+    case ZMK_SPLIT_TRANSPORT_PERIPHERAL_EVENT_TYPE_INPUT_EVENT:
+        return CONFIG_ZMK_SPLIT_ESB_RETRY_INPUT_EVENT;
+    case ZMK_SPLIT_TRANSPORT_PERIPHERAL_EVENT_TYPE_KEY_POSITION_EVENT:
+        return CONFIG_ZMK_SPLIT_ESB_RETRY_KEY_POSITION;
+    case ZMK_SPLIT_TRANSPORT_PERIPHERAL_EVENT_TYPE_SENSOR_EVENT:
+        return CONFIG_ZMK_SPLIT_ESB_RETRY_SENSOR_EVENT;
+    case ZMK_SPLIT_TRANSPORT_PERIPHERAL_EVENT_TYPE_BATTERY_EVENT:
+        return CONFIG_ZMK_SPLIT_ESB_RETRY_BATTERY_EVENT;
+    default:
+        return 0;
     }
 }
 
@@ -139,6 +156,18 @@ split_peripheral_esb_report_event(const struct zmk_split_transport_peripheral_ev
         LOG_WRN("Failed to put the postfix (%d vs %d)", put, sizeof(postfix));
     }
     // LOG_HEXDUMP_DBG(&postfix, sizeof(postfix), "postfix");
+
+    uint8_t max_retry = get_retry_count(event);
+    if (++message_id == 0) {
+        message_id = 1;
+    }
+    struct esb_msg_meta meta = {.message_id = message_id, .max_retry = max_retry};
+
+    put = ring_buf_put(&chosen_tx_buf, (uint8_t *)&meta, sizeof(meta));
+    if (put != sizeof(meta)) {
+        LOG_WRN("Failed to put the meta (%d vs %d)", put, sizeof(meta));
+    }
+    // LOG_HEXDUMP_DBG(&meta, sizeof(meta), "meta");
 
     begin_tx();
 

@@ -44,6 +44,26 @@ config ZMK_SPLIT_ESB_CMD_BUFFER_ITEMS
     int "Number of central commands to buffer for TX/RX"
     default 4
 
+config ZMK_SPLIT_ESB_RETRY_INPUT_EVENT
+    int "Retry count for input events"
+    default 3
+
+config ZMK_SPLIT_ESB_RETRY_KEY_POSITION
+    int "Retry count for key position events"
+    default 10
+
+config ZMK_SPLIT_ESB_RETRY_SENSOR_EVENT
+    int "Retry count for sensor events"
+    default 3
+
+config ZMK_SPLIT_ESB_RETRY_BATTERY_EVENT
+    int "Retry count for battery events"
+    default 2
+
+config ZMK_SPLIT_ESB_RETRY_CMD
+    int "Retry count for central commands"
+    default 1
+
 module = ZMK_SPLIT_ESB
 module-str = ZMK_SPLIT_ESB
 source "${ZEPHYR_BASE}/subsys/logging/Kconfig.template.log_config"

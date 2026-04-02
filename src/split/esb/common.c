@@ -5,6 +5,7 @@
  */
 
 #include "common.h"
+#include "app_esb.h"
 
 #include <zephyr/sys/crc.h>
 #include <zephyr/drivers/uart.h>
@@ -20,7 +21,7 @@ void zmk_split_esb_async_tx(struct zmk_split_esb_async_state *state) {
     if (!tx_buf_len || tx_buf_len > CONFIG_ESB_MAX_PAYLOAD_LENGTH) {
         return;
     }
-    // LOG_DBG("tx_buf_len %d", tx_buf_len);
+    // LOG_DBG("tx_buf_len: %d", tx_buf_len);
 
     uint8_t buf[CONFIG_ESB_MAX_PAYLOAD_LENGTH];
     size_t claim_len = 0;
@@ -39,9 +40,15 @@ void zmk_split_esb_async_tx(struct zmk_split_esb_async_state *state) {
     // LOG_DBG("tx_buf_len: %d, claim_len: %d", tx_buf_len, claim_len);
     // LOG_HEXDUMP_DBG(buf, claim_len, "buf");
 
+    size_t meta_offset = claim_len - sizeof(struct esb_msg_meta);
+    struct esb_msg_meta meta;
+    memcpy(&meta, &buf[meta_offset], sizeof(meta));
+
     app_esb_data_t tx_data = {
         .data = buf,
-        .len = claim_len
+        .len = meta_offset,
+        .message_id = meta.message_id,
+        .max_retry = meta.max_retry
     };
     zmk_split_esb_send(&tx_data); // callback > zmk_split_esb_cb()
 

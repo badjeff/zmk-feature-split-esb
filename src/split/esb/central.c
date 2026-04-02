@@ -42,6 +42,8 @@ RING_BUF_DECLARE(tx_buf, TX_BUFFER_SIZE);
 
 static K_SEM_DEFINE(esb_send_cmd_sem, 1, 1);
 
+static uint16_t cmd_message_id = 0;
+
 static void publish_events_work(struct k_work *work);
 
 K_WORK_DEFINE(publish_events, publish_events_work);
@@ -129,6 +131,16 @@ static int split_central_esb_send_command(uint8_t source,
     put = ring_buf_put(&tx_buf, (uint8_t *)&postfix, sizeof(postfix));
     if (put != sizeof(postfix)) {
         LOG_WRN("Failed to put the postfix (%d vs %d)", put, sizeof(postfix));
+    }
+
+    if (++cmd_message_id == 0) {
+        cmd_message_id = 1;
+    }
+    struct esb_msg_meta meta = {.message_id = cmd_message_id, .max_retry = CONFIG_ZMK_SPLIT_ESB_RETRY_CMD};
+
+    put = ring_buf_put(&tx_buf, (uint8_t *)&meta, sizeof(meta));
+    if (put != sizeof(meta)) {
+        LOG_WRN("Failed to put the meta (%d vs %d)", put, sizeof(meta));
     }
 
     begin_tx();

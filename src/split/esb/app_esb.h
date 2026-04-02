@@ -29,6 +29,8 @@ typedef struct {
 typedef struct {
     uint8_t *data;
     uint32_t len;
+    uint16_t message_id;
+    uint8_t max_retry;
 } app_esb_data_t;
 
 typedef struct {
