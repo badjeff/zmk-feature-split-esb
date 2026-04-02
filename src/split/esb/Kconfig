@@ -34,15 +34,15 @@ config ZMK_SPLIT_ESB_PROTO_TX_RETRANSMIT_COUNT
 
 config ZMK_SPLIT_ESB_PROTO_MSGQ_ITEMS
     int "Number of message queue size to buffer ESB payload for TX in between multi-protocol service timeslots (CONFIG_MPSL_TIMESLOT_SESSION_COUNT)"
-    default 16
+    default 64
 
 config ZMK_SPLIT_ESB_EVENT_BUFFER_ITEMS
     int "Number of peripheral events to buffer for TX/RX"
-    default 16
+    default 64
 
 config ZMK_SPLIT_ESB_CMD_BUFFER_ITEMS
     int "Number of central commands to buffer for TX/RX"
-    default 4
+    default 16
 
 config ZMK_SPLIT_ESB_RETRY_INPUT_EVENT
     int "Retry count for input events"
@@ -63,6 +63,10 @@ config ZMK_SPLIT_ESB_RETRY_BATTERY_EVENT
 config ZMK_SPLIT_ESB_RETRY_CMD
     int "Retry count for central commands"
     default 1
+
+config ZMK_SPLIT_ESB_MSGQ_FULL_TIMEOUT_MS
+    int "Timeout (ms) to clear retry table when msgq stays full"
+    default 3000
 
 module = ZMK_SPLIT_ESB
 module-str = ZMK_SPLIT_ESB

@@ -54,6 +54,9 @@ static uint16_t m_retry_msg_ids[CONFIG_ZMK_SPLIT_ESB_PROTO_MSGQ_ITEMS];
 static uint8_t m_retry_left[CONFIG_ZMK_SPLIT_ESB_PROTO_MSGQ_ITEMS];
 static uint16_t m_current_tx_msg_id;
 
+// Track msgq full errors
+static uint32_t m_msgq_full_last_time;
+
 static void clear_retry_table(void) {
     for (int i = 0; i < CONFIG_ZMK_SPLIT_ESB_PROTO_MSGQ_ITEMS; i++) {
         m_retry_msg_ids[i] = 0;
@@ -363,9 +366,20 @@ int zmk_split_esb_send(app_esb_data_t *tx_packet) {
         if (idx >= 0) {
             m_current_tx_msg_id = tx_packet->message_id;
         }
-    }
-    if (ret != 0) {
-        LOG_WRN("Failed to queue esb tx_payload_q (%d)", ret);
+        m_msgq_full_last_time = 0;
+    } else if (ret == -ENOMSG) {
+        uint32_t now = k_uptime_get_32();
+        if (!m_msgq_full_last_time) {
+            m_msgq_full_last_time = now;
+        }
+        if (now - m_msgq_full_last_time > CONFIG_ZMK_SPLIT_ESB_MSGQ_FULL_TIMEOUT_MS) {
+            LOG_WRN("Msgq full for %dms, clearing msgq and retry table", CONFIG_ZMK_SPLIT_ESB_MSGQ_FULL_TIMEOUT_MS);
+            k_msgq_purge(&m_msgq_tx_payloads);
+            clear_retry_table();
+            m_msgq_full_last_time = 0;
+        }
+    } else {
+        LOG_DBG("Failed to queue esb tx_payload_q (%d)", ret);
     }
     if (m_active) {
         pull_packet_from_tx_msgq();

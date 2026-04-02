@@ -104,11 +104,26 @@ CONFIG_MPSL_TIMESLOT_SESSION_COUNT=1
 
 # Number of message queue size to buffer ESB payload for TX in between multi-protocol service 
 # timeslots (CONFIG_MPSL_TIMESLOT_SESSION_COUNT)
-CONFIG_ZMK_SPLIT_ESB_PROTO_MSGQ_ITEMS=16
+CONFIG_ZMK_SPLIT_ESB_PROTO_MSGQ_ITEMS=64
 
 # qeuue size for both peripheral (EVENT) and central (CMD)
-CONFIG_ZMK_SPLIT_ESB_EVENT_BUFFER_ITEMS=16
-CONFIG_ZMK_SPLIT_ESB_CMD_BUFFER_ITEMS=4
+CONFIG_ZMK_SPLIT_ESB_EVENT_BUFFER_ITEMS=64
+CONFIG_ZMK_SPLIT_ESB_CMD_BUFFER_ITEMS=16
+
+# Retry counts for event/command types (0 = no retry, default varies)
+# Input events (key presses): 3 retries
+CONFIG_ZMK_SPLIT_ESB_RETRY_INPUT_EVENT=3
+# Key position events: 10 retries
+CONFIG_ZMK_SPLIT_ESB_RETRY_KEY_POSITION=10
+# Sensor events: 3 retries
+CONFIG_ZMK_SPLIT_ESB_RETRY_SENSOR_EVENT=3
+# Battery events: 2 retries
+CONFIG_ZMK_SPLIT_ESB_RETRY_BATTERY_EVENT=2
+# Central commands: 1 retry
+CONFIG_ZMK_SPLIT_ESB_RETRY_CMD=1
+
+# Timeout (ms) to clear msgq and retry table when msgq stays full
+CONFIG_ZMK_SPLIT_ESB_MSGQ_FULL_TIMEOUT_MS=3000
 
 # another IMPORTANT config for ESB
 CONFIG_SYSTEM_WORKQUEUE_STACK_SIZE=2048

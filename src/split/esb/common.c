@@ -21,6 +21,10 @@ void zmk_split_esb_async_tx(struct zmk_split_esb_async_state *state) {
     if (!tx_buf_len || tx_buf_len > CONFIG_ESB_MAX_PAYLOAD_LENGTH) {
         return;
     }
+    // Need at least prefix + postfix + meta
+    if (tx_buf_len < sizeof(struct esb_msg_prefix) + sizeof(struct esb_msg_postfix) + sizeof(struct esb_msg_meta)) {
+        return;
+    }
     // LOG_DBG("tx_buf_len: %d", tx_buf_len);
 
     uint8_t buf[CONFIG_ESB_MAX_PAYLOAD_LENGTH];
@@ -119,6 +123,7 @@ void zmk_split_esb_cb(app_esb_event_t *event, struct zmk_split_esb_async_state *
 int zmk_split_esb_get_item(struct ring_buf *rx_buf, uint8_t *env, size_t env_size) {
     static uint8_t reset_count = 0;
 
+    // RX buffer only has prefix + postfix (no meta on receiver side)
     while (ring_buf_size_get(rx_buf) > sizeof(struct esb_msg_prefix) + sizeof(struct esb_msg_postfix)) {
         struct esb_msg_prefix prefix;
 

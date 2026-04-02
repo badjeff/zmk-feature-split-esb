@@ -31,7 +31,7 @@ LOG_MODULE_DECLARE(zmk, CONFIG_ZMK_SPLIT_ESB_LOG_LEVEL);
 #include "common.h"
 
 #define TX_BUFFER_SIZE                                                                             \
-    ((sizeof(struct esb_event_envelope) + sizeof(struct esb_msg_postfix)) *                        \
+    ((sizeof(struct esb_event_envelope) + sizeof(struct esb_msg_postfix) + sizeof(struct esb_msg_meta)) * \
      CONFIG_ZMK_SPLIT_ESB_EVENT_BUFFER_ITEMS)
 #define RX_BUFFER_SIZE                                                                             \
     ((sizeof(struct esb_command_envelope) + sizeof(struct esb_msg_postfix)) *                      \
