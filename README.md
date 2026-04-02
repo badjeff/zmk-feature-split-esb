@@ -121,6 +121,11 @@ CONFIG_ESB_TX_FIFO_SIZE=1
 # Logging!
 # CONFIG_ZMK_SPLIT_ESB_LOG_LEVEL_DBG=y
 
+# for Zephyr input subsys
+# NOTE: messages needed to be requeued in some input-processors at a very high rate internally,
+CONFIG_INPUT_THREAD_STACK_SIZE=4096
+CONFIG_INPUT_QUEUE_MAX_MSGS=256
+
 # for battery reporting on RX
 # NOTE: CONFIG_ZMK_SPLIT_BLE_CENTRAL_PERIPHERALS is valid for ESB-only, even its look like a BLE-only config.
 # NOTE: central will not advertise to any BLE host if ble_profile_count is zero.
