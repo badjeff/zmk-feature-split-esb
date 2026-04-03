@@ -50,19 +50,19 @@ config ZMK_SPLIT_ESB_CMD_BUFFER_ITEMS
 
 config ZMK_SPLIT_ESB_RETRY_INPUT_EVENT
     int "Retry count for input events"
-    default 3
+    default 0
 
 config ZMK_SPLIT_ESB_RETRY_KEY_POSITION
     int "Retry count for key position events"
-    default 10
+    default 3
 
 config ZMK_SPLIT_ESB_RETRY_SENSOR_EVENT
     int "Retry count for sensor events"
-    default 3
+    default 2
 
 config ZMK_SPLIT_ESB_RETRY_BATTERY_EVENT
     int "Retry count for battery events"
-    default 2
+    default 1
 
 config ZMK_SPLIT_ESB_RETRY_CMD
     int "Retry count for central commands"

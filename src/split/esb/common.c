@@ -121,7 +121,7 @@ void zmk_split_esb_cb(app_esb_event_t *event, struct zmk_split_esb_async_state *
 }
 
 int zmk_split_esb_get_item(struct ring_buf *rx_buf, uint8_t *env, size_t env_size) {
-    static uint8_t reset_count = 0;
+    // static uint8_t reset_count = 0;
 
     // RX buffer only has prefix + postfix (no meta on receiver side)
     while (ring_buf_size_get(rx_buf) > sizeof(struct esb_msg_prefix) + sizeof(struct esb_msg_postfix)) {
@@ -134,16 +134,22 @@ int zmk_split_esb_get_item(struct ring_buf *rx_buf, uint8_t *env, size_t env_siz
 
         if (memcmp(&prefix.magic_prefix, &ZMK_SPLIT_ESB_ENVELOPE_MAGIC_PREFIX,
                    sizeof(prefix.magic_prefix)) != 0) {
-            reset_count++;
-            if (reset_count > 3) {
-                LOG_WRN("Multiple prefix mismatches, resetting buffer");
-                ring_buf_reset(rx_buf);
-                reset_count = 0;
-            } else {
-                uint8_t dummy;
-                ring_buf_get(rx_buf, &dummy, 1);
-                LOG_WRN("Prefix mismatch, discarding byte %02x", dummy);
-            }
+
+            /*** auto-healing is not working, keep for reference only ***/
+            // reset_count++;
+            // if (reset_count > 3) {
+            //     LOG_WRN("Multiple prefix mismatches, resetting buffer");
+            //     ring_buf_reset(rx_buf);
+            //     reset_count = 0;
+            // } else {
+            //     uint8_t dummy;
+            //     ring_buf_get(rx_buf, &dummy, 1);
+            //     LOG_WRN("Prefix mismatch, discarding byte %02x", dummy);
+            // }
+            /*** ****/
+            LOG_WRN("Multiple prefix mismatches, resetting buffer");
+            ring_buf_reset(rx_buf);
+
             return -EINVAL;
         }
 
@@ -183,7 +189,7 @@ int zmk_split_esb_get_item(struct ring_buf *rx_buf, uint8_t *env, size_t env_siz
             return -EINVAL;
         }
 
-        reset_count = 0;
+        // reset_count = 0;
         return 0;
     }
 

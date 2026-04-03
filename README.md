@@ -118,15 +118,15 @@ CONFIG_ZMK_SPLIT_ESB_EVENT_BUFFER_ITEMS=64
 CONFIG_ZMK_SPLIT_ESB_CMD_BUFFER_ITEMS=16
 
 # Retry counts for event/command types (0 = no retry, default varies)
-# Input events (key presses): 3 retries
-CONFIG_ZMK_SPLIT_ESB_RETRY_INPUT_EVENT=3
-# Key position events: 10 retries
-CONFIG_ZMK_SPLIT_ESB_RETRY_KEY_POSITION=10
-# Sensor events: 3 retries
-CONFIG_ZMK_SPLIT_ESB_RETRY_SENSOR_EVENT=3
-# Battery events: 2 retries
-CONFIG_ZMK_SPLIT_ESB_RETRY_BATTERY_EVENT=2
-# Central commands: 1 retry
+# Input events (key presses): 0 retry - allowing lossful cursor inputs
+CONFIG_ZMK_SPLIT_ESB_RETRY_INPUT_EVENT=0
+# Key position events: 3 retries - reduce key press loss
+CONFIG_ZMK_SPLIT_ESB_RETRY_KEY_POSITION=3
+# Sensor events: 2 retries
+CONFIG_ZMK_SPLIT_ESB_RETRY_SENSOR_EVENT=2
+# Battery events: 1 retry
+CONFIG_ZMK_SPLIT_ESB_RETRY_BATTERY_EVENT=1
+# Central commands: 1 retry - reduce loss for CPI toggle behavior
 CONFIG_ZMK_SPLIT_ESB_RETRY_CMD=1
 
 # Timeout (ms) to clear msgq and retry table when msgq stays full

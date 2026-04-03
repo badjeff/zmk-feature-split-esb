@@ -49,26 +49,33 @@ uint8_t esb_addr_prefix[4] = DT_INST_PROP(0, addr_prefix);
 
 static app_esb_callback_t m_callback;
 
-// Retry table for tracking message retries (includes payload for rebuild)
-static uint16_t m_retry_msg_ids[CONFIG_ZMK_SPLIT_ESB_PROTO_MSGQ_ITEMS];
-static uint8_t m_retry_left[CONFIG_ZMK_SPLIT_ESB_PROTO_MSGQ_ITEMS];
-static struct esb_payload m_retry_payloads[CONFIG_ZMK_SPLIT_ESB_PROTO_MSGQ_ITEMS];
-static uint16_t m_current_tx_msg_id;
-
 // Track msgq full errors
 static uint32_t m_msgq_full_last_time;
 
+// Retry table for tracking message retries (includes payload for rebuild)
+struct retry_entry {
+    uint16_t msg_id;
+    uint8_t left;
+    uint8_t max;
+    struct esb_payload payload;
+};
+static struct retry_entry m_retry_table[CONFIG_ZMK_SPLIT_ESB_PROTO_MSGQ_ITEMS];
+static uint16_t m_current_tx_msg_id;
+
 static void clear_retry_table(void) {
     for (int i = 0; i < CONFIG_ZMK_SPLIT_ESB_PROTO_MSGQ_ITEMS; i++) {
-        m_retry_msg_ids[i] = 0;
-        m_retry_left[i] = 0;
+        struct retry_entry *entry = &m_retry_table[i];
+        entry->msg_id = 0;
+        entry->left = 0;
+        entry->max = 0;
+        entry->payload.length = 0;
     }
     m_current_tx_msg_id = 0;
 }
 
 static int find_retry_by_msg_id(uint16_t message_id) {
     for (int i = 0; i < CONFIG_ZMK_SPLIT_ESB_PROTO_MSGQ_ITEMS; i++) {
-        if (m_retry_msg_ids[i] == message_id) {
+        if (m_retry_table[i].msg_id == message_id) {
             return i;
         }
     }
@@ -79,13 +86,20 @@ static int find_empty_retry_slot(void) {
     return find_retry_by_msg_id(0);
 }
 
-static int add_retry_entry(uint16_t message_id, uint8_t max_retry, struct esb_payload *payload) {
+static int add_retry_entry(uint16_t message_id, uint8_t max, struct esb_payload *payload) {
     int idx = find_empty_retry_slot();
     if (idx >= 0) {
-        m_retry_msg_ids[idx] = message_id;
-        m_retry_left[idx] = max_retry;
-        if (payload) {
-            memcpy(&m_retry_payloads[idx], payload, sizeof(struct esb_payload));
+        struct retry_entry *entry = &m_retry_table[idx];
+        entry->msg_id = message_id;
+        entry->left = max;
+        entry->max = max;
+        if (max && payload) {
+            memcpy(entry->payload.data, payload->data, payload->length);
+            entry->payload.length = payload->length;
+            entry->payload.pipe = payload->pipe;
+            entry->payload.noack = payload->noack;
+        } else {
+            entry->payload.length = 0;
         }
     }
     return idx;
@@ -94,32 +108,37 @@ static int add_retry_entry(uint16_t message_id, uint8_t max_retry, struct esb_pa
 static void remove_retry_entry_by_msg_id(uint16_t message_id) {
     int idx = find_retry_by_msg_id(message_id);
     if (idx >= 0) {
-        m_retry_msg_ids[idx] = 0;
-        m_retry_left[idx] = 0;
-        memset(&m_retry_payloads[idx], 0, sizeof(struct esb_payload));
+        struct retry_entry *entry = &m_retry_table[idx];
+        if (entry->max > 0) {
+            memset(&entry->payload, 0, sizeof(struct esb_payload));
+        }
+        entry->msg_id = 0;
+        entry->left = 0;
+        entry->max = 0;
     }
 }
 
 static uint8_t get_retry_left_by_msg_id(uint16_t message_id) {
     int idx = find_retry_by_msg_id(message_id);
-    if (idx >= 0) {
-        return m_retry_left[idx];
-    }
-    return 0;
+    return (idx >= 0) ? m_retry_table[idx].left : 0;
 }
 
 static uint8_t decrement_retry_by_msg_id(uint16_t message_id) {
     int idx = find_retry_by_msg_id(message_id);
-    if (idx >= 0 && m_retry_left[idx] > 0) {
-        m_retry_left[idx]--;
+    if (idx >= 0 && m_retry_table[idx].left > 0) {
+        m_retry_table[idx].left--;
     }
-    return (idx >= 0) ? m_retry_left[idx] : 0;
+    return (idx >= 0) ? m_retry_table[idx].left : 0;
 }
 
 static bool get_retry_payload_by_msg_id(uint16_t message_id, struct esb_payload *payload) {
     int idx = find_retry_by_msg_id(message_id);
-    if (idx >= 0 && payload) {
-        memcpy(payload, &m_retry_payloads[idx], sizeof(struct esb_payload));
+    if (idx >= 0 && m_retry_table[idx].max > 0 && payload) {
+        struct retry_entry *entry = &m_retry_table[idx];
+        memcpy(payload->data, entry->payload.data, entry->payload.length);
+        payload->length = entry->payload.length;
+        payload->pipe = entry->payload.pipe;
+        payload->noack = entry->payload.noack;
         return true;
     }
     return false;
@@ -158,16 +177,26 @@ static void event_handler(struct esb_evt const *event) {
             LOG_WRN("Retry left for msg %d: %d", m_current_tx_msg_id, retry_left);
 
             // Re-insert failed payload into msgq for retry in next cycle
+            bool dispose_msg = !retry_left;
             if (retry_left > 0) {
                 struct esb_payload retry_payload;
                 if (get_retry_payload_by_msg_id(m_current_tx_msg_id, &retry_payload)) {
                     int requeue_ret = k_msgq_put(&m_msgq_tx_payloads, &retry_payload, K_NO_WAIT);
-                    if (requeue_ret == 0) {
-                        LOG_WRN("Re-queued payload from retry table for retry");
-                    } else if (requeue_ret == -ENOMSG) {
+                    if (requeue_ret == -ENOMSG) {
                         LOG_WRN("Msgq full, cannot re-queue payload from retry table");
+                        dispose_msg = true;
                     }
+                } else {
+                    // This should not be called.
+                    LOG_ERR("Failed to get payload form retry table for retry");
+                    dispose_msg = true;
                 }
+            }
+            if (dispose_msg) {
+                // Clear retry entry for the message that should give up retry
+                remove_retry_entry_by_msg_id(m_current_tx_msg_id);
+                m_current_tx_msg_id = 0;
+                LOG_WRN("Disposed payload form retry table after too much fail");
             }
 
             // esb_flush_tx(); // DOUH, had fixed @ 3.1.0-rc1, not ready yet.
