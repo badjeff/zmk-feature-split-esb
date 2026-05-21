@@ -64,7 +64,7 @@ void zmk_split_esb_cb(app_esb_event_t *event, struct zmk_split_esb_async_state *
                 zmk_split_esb_async_tx(state);
             }
             break;
-        case APP_ESB_EVT_RX:
+        case APP_ESB_EVT_RX: {
             // LOG_DBG("ESB RX received: %d", event->data_length);
 
             // lock it for a safe result from ring_buf_space_get()
@@ -76,7 +76,7 @@ void zmk_split_esb_cb(app_esb_event_t *event, struct zmk_split_esb_async_state *
 
             if (ring_buf_space_get(state->rx_buf) < event->data_length) {
                 LOG_WRN("No room to receive from peripheral (have %d but only space for %d/%d)",
-                        event->data_length, ring_buf_space_get(state->rx_buf), 
+                        event->data_length, ring_buf_space_get(state->rx_buf),
                         ring_buf_capacity_get(state->rx_buf));
                 k_sem_give(&esb_cb_sem);
                 break;
@@ -99,6 +99,7 @@ void zmk_split_esb_cb(app_esb_event_t *event, struct zmk_split_esb_async_state *
             }
 
             break;
+        }
         default:
             LOG_ERR("Unknown APP ESB event!");
             break;

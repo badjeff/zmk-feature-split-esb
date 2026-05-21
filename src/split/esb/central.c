@@ -61,32 +61,6 @@ static void begin_tx(void) {
     zmk_split_esb_async_tx(&async_state);
 }
 
-/* Per-source key-position state tracked by the central.
- * Source IDs are uint8_t so the table covers all possible IDs. */
-static uint8_t peripheral_position_state[UINT8_MAX + 1][ESB_KEY_STATE_LEN];
-
-/* XOR the received state against the tracked state, emit press/release events
- * for every bit that changed, then update the tracked state. */
-static void process_key_state(uint8_t source, const uint8_t *new_state) {
-    for (int i = 0; i < ESB_KEY_STATE_LEN; i++) {
-        uint8_t changed = new_state[i] ^ peripheral_position_state[source][i];
-        peripheral_position_state[source][i] = new_state[i];
-
-        for (int j = 0; j < 8; j++) {
-            if (!(changed & BIT(j))) {
-                continue;
-            }
-            uint32_t position = (uint32_t)((i * 8) + j);
-            bool pressed = (new_state[i] & BIT(j)) != 0;
-            struct zmk_split_transport_peripheral_event ev = {
-                .type = ZMK_SPLIT_TRANSPORT_PERIPHERAL_EVENT_TYPE_KEY_POSITION_EVENT,
-                .data = {.key_position_event = {.position = position, .pressed = pressed}},
-            };
-            zmk_split_transport_central_peripheral_event_handler(&esb_central, source, ev);
-        }
-    }
-}
-
 static ssize_t get_payload_data_size(const struct zmk_split_transport_central_command *cmd) {
     switch (cmd->type) {
     case ZMK_SPLIT_TRANSPORT_CENTRAL_CMD_TYPE_POLL_EVENTS:
@@ -204,6 +178,32 @@ static const struct zmk_split_transport_central_api central_api = {
 };
 
 ZMK_SPLIT_TRANSPORT_CENTRAL_REGISTER(esb_central, &central_api, CONFIG_ZMK_SPLIT_ESB_PRIORITY);
+
+/* Per-source key-position state tracked by the central.
+ * Source IDs are uint8_t so the table covers all possible IDs. */
+static uint8_t peripheral_position_state[UINT8_MAX + 1][ESB_KEY_STATE_LEN];
+
+/* XOR the received state against the tracked state, emit press/release events
+ * for every bit that changed, then update the tracked state. */
+static void process_key_state(uint8_t source, const uint8_t *new_state) {
+    for (int i = 0; i < ESB_KEY_STATE_LEN; i++) {
+        uint8_t changed = new_state[i] ^ peripheral_position_state[source][i];
+        peripheral_position_state[source][i] = new_state[i];
+
+        for (int j = 0; j < 8; j++) {
+            if (!(changed & BIT(j))) {
+                continue;
+            }
+            uint32_t position = (uint32_t)((i * 8) + j);
+            bool pressed = (new_state[i] & BIT(j)) != 0;
+            struct zmk_split_transport_peripheral_event ev = {
+                .type = ZMK_SPLIT_TRANSPORT_PERIPHERAL_EVENT_TYPE_KEY_POSITION_EVENT,
+                .data = {.key_position_event = {.position = position, .pressed = pressed}},
+            };
+            zmk_split_transport_central_peripheral_event_handler(&esb_central, source, ev);
+        }
+    }
+}
 
 static void notify_transport_status(void) {
     if (transport_status_cb) {
