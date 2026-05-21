@@ -61,6 +61,32 @@ static void begin_tx(void) {
     zmk_split_esb_async_tx(&async_state);
 }
 
+/* Per-source key-position state tracked by the central.
+ * Source IDs are uint8_t so the table covers all possible IDs. */
+static uint8_t peripheral_position_state[UINT8_MAX + 1][ESB_KEY_STATE_LEN];
+
+/* XOR the received state against the tracked state, emit press/release events
+ * for every bit that changed, then update the tracked state. */
+static void process_key_state(uint8_t source, const uint8_t *new_state) {
+    for (int i = 0; i < ESB_KEY_STATE_LEN; i++) {
+        uint8_t changed = new_state[i] ^ peripheral_position_state[source][i];
+        peripheral_position_state[source][i] = new_state[i];
+
+        for (int j = 0; j < 8; j++) {
+            if (!(changed & BIT(j))) {
+                continue;
+            }
+            uint32_t position = (uint32_t)((i * 8) + j);
+            bool pressed = (new_state[i] & BIT(j)) != 0;
+            struct zmk_split_transport_peripheral_event ev = {
+                .type = ZMK_SPLIT_TRANSPORT_PERIPHERAL_EVENT_TYPE_KEY_POSITION_EVENT,
+                .data = {.key_position_event = {.position = position, .pressed = pressed}},
+            };
+            zmk_split_transport_central_peripheral_event_handler(&esb_central, source, ev);
+        }
+    }
+}
+
 static ssize_t get_payload_data_size(const struct zmk_split_transport_central_command *cmd) {
     switch (cmd->type) {
     case ZMK_SPLIT_TRANSPORT_CENTRAL_CMD_TYPE_POLL_EVENTS:
@@ -104,14 +130,17 @@ static int split_central_esb_send_command(uint8_t source,
         return -ENOSPC;
     }
 
-    struct esb_command_envelope env = {.prefix = {
-                                            .magic_prefix = ZMK_SPLIT_ESB_ENVELOPE_MAGIC_PREFIX,
-                                            .payload_size = payload_size,
-                                        },
-                                        .payload = {
-                                            .source = source,
-                                            .cmd = cmd,
-                                        }};
+    struct esb_command_envelope env = {
+        .prefix = {
+            .magic_prefix = ZMK_SPLIT_ESB_ENVELOPE_MAGIC_PREFIX,
+            .msg_type = ESB_MSG_TYPE_COMMAND,
+            .payload_size = payload_size,
+        },
+        .payload = {
+            .source = source,
+            .cmd = cmd,
+        },
+    };
 
     size_t pfx_len = sizeof(env.prefix) + payload_size;
     // LOG_HEXDUMP_DBG(&env, pfx_len, "Payload");
@@ -199,15 +228,28 @@ static int zmk_split_esb_central_init(void) {
 SYS_INIT(zmk_split_esb_central_init, APPLICATION, CONFIG_KERNEL_INIT_PRIORITY_DEFAULT);
 
 static void publish_events_work(struct k_work *work) {
+    /* Buffer sized for the larger of the two inbound envelope types. */
+    union {
+        struct esb_event_envelope event_env;
+        struct esb_key_state_envelope key_state_env;
+    } env_buf;
+
     while (ring_buf_size_get(&rx_buf) > ESB_MSG_EXTRA_SIZE) {
-        struct esb_event_envelope env;
         int item_err =
-            zmk_split_esb_get_item(&rx_buf, (uint8_t *)&env, sizeof(struct esb_event_envelope));
+            zmk_split_esb_get_item(&rx_buf, (uint8_t *)&env_buf, sizeof(env_buf));
         switch (item_err) {
-        case 0:
-            zmk_split_transport_central_peripheral_event_handler(&esb_central, env.payload.source,
-                                                                 env.payload.event);
+        case 0: {
+            const struct esb_msg_prefix *prefix = (const struct esb_msg_prefix *)&env_buf;
+            if (prefix->msg_type == ESB_MSG_TYPE_KEY_STATE) {
+                process_key_state(env_buf.key_state_env.payload.source,
+                                  env_buf.key_state_env.payload.state);
+            } else {
+                zmk_split_transport_central_peripheral_event_handler(
+                    &esb_central, env_buf.event_env.payload.source,
+                    env_buf.event_env.payload.event);
+            }
             break;
+        }
         case -EAGAIN:
             return;
         default:
