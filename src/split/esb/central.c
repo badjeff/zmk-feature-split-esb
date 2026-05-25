@@ -24,6 +24,7 @@ LOG_MODULE_DECLARE(zmk, CONFIG_ZMK_SPLIT_ESB_LOG_LEVEL);
 #include <zmk/events/position_state_changed.h>
 #include <zmk/events/sensor_event.h>
 #include <zmk/pointing/input_split.h>
+#include <zephyr/dt-bindings/input/input-event-codes.h>
 #include <zmk/hid_indicators_types.h>
 #include <zmk/physical_layouts.h>
 
@@ -97,7 +98,7 @@ static int split_central_esb_send_command(uint8_t source,
         data_size + sizeof(source) + sizeof(enum zmk_split_transport_central_command_type);
 
     if (ring_buf_space_get(&tx_buf) < ESB_MSG_EXTRA_SIZE + payload_size) {
-        LOG_WRN("No room to send command to the peripheral %d (have %d but only space for %d/%d)", 
+        LOG_WRN("No room to send command to the peripheral %d (have %d but only space for %d/%d)",
                 source, ESB_MSG_EXTRA_SIZE + payload_size, ring_buf_space_get(&tx_buf),
                 ring_buf_capacity_get(&tx_buf));
         k_sem_give(&esb_send_cmd_sem);
@@ -107,7 +108,6 @@ static int split_central_esb_send_command(uint8_t source,
     struct esb_command_envelope env = {
         .prefix = {
             .magic_prefix = ZMK_SPLIT_ESB_ENVELOPE_MAGIC_PREFIX,
-            .msg_type = ESB_MSG_TYPE_COMMAND,
             .payload_size = payload_size,
         },
         .payload = {
@@ -179,13 +179,13 @@ static const struct zmk_split_transport_central_api central_api = {
 
 ZMK_SPLIT_TRANSPORT_CENTRAL_REGISTER(esb_central, &central_api, CONFIG_ZMK_SPLIT_ESB_PRIORITY);
 
-/* Per-source key-position state tracked by the central.
+/* Per-source key-position and button state tracked by the central.
  * Source IDs are uint8_t so the table covers all possible IDs. */
 static uint8_t peripheral_position_state[UINT8_MAX + 1][ESB_KEY_STATE_LEN];
+static uint8_t peripheral_button_state[UINT8_MAX + 1];
 
-/* XOR the received state against the tracked state, emit press/release events
- * for every bit that changed, then update the tracked state. */
-static void process_key_state(uint8_t source, const uint8_t *new_state) {
+/* XOR received state against tracked state, emit events for changed bits, update. */
+static void process_key_state(uint8_t source, const uint8_t *new_state, uint8_t new_buttons) {
     for (int i = 0; i < ESB_KEY_STATE_LEN; i++) {
         uint8_t changed = new_state[i] ^ peripheral_position_state[source][i];
         peripheral_position_state[source][i] = new_state[i];
@@ -202,6 +202,27 @@ static void process_key_state(uint8_t source, const uint8_t *new_state) {
             };
             zmk_split_transport_central_peripheral_event_handler(&esb_central, source, ev);
         }
+    }
+
+    uint8_t changed_buttons = new_buttons ^ peripheral_button_state[source];
+    peripheral_button_state[source] = new_buttons;
+
+    for (int i = 0; i < ESB_BTN_STATE_LEN; i++) {
+        if (!(changed_buttons & BIT(i))) {
+            continue;
+        }
+        bool pressed = (new_buttons & BIT(i)) != 0;
+        struct zmk_split_transport_peripheral_event ev = {
+            .type = ZMK_SPLIT_TRANSPORT_PERIPHERAL_EVENT_TYPE_INPUT_EVENT,
+            .data = {.input_event = {
+                .reg = 0,
+                .sync = 1,
+                .type = INPUT_EV_KEY,
+                .code = INPUT_BTN_0 + i,
+                .value = pressed ? 1 : 0,
+            }},
+        };
+        zmk_split_transport_central_peripheral_event_handler(&esb_central, source, ev);
     }
 }
 
@@ -239,10 +260,11 @@ static void publish_events_work(struct k_work *work) {
             zmk_split_esb_get_item(&rx_buf, (uint8_t *)&env_buf, sizeof(env_buf));
         switch (item_err) {
         case 0: {
-            const struct esb_msg_prefix *prefix = (const struct esb_msg_prefix *)&env_buf;
-            if (prefix->msg_type == ESB_MSG_TYPE_KEY_STATE) {
-                process_key_state(env_buf.key_state_env.payload.source,
-                                  env_buf.key_state_env.payload.state);
+            uint8_t raw_source = env_buf.key_state_env.payload.source;
+            if (raw_source & ESB_SOURCE_KEY_STATE_FLAG) {
+                uint8_t source = raw_source & ~ESB_SOURCE_KEY_STATE_FLAG;
+                process_key_state(source, env_buf.key_state_env.payload.state,
+                                  env_buf.key_state_env.payload.button_state);
             } else {
                 zmk_split_transport_central_peripheral_event_handler(
                     &esb_central, env_buf.event_env.payload.source,

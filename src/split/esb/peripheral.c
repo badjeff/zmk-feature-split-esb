@@ -24,6 +24,7 @@ LOG_MODULE_DECLARE(zmk, CONFIG_ZMK_SPLIT_ESB_LOG_LEVEL);
 #include <zmk/events/position_state_changed.h>
 #include <zmk/events/sensor_event.h>
 #include <zmk/pointing/input_split.h>
+#include <zephyr/dt-bindings/input/input-event-codes.h>
 #include <zmk/hid_indicators_types.h>
 #include <zmk/physical_layouts.h>
 
@@ -46,6 +47,9 @@ static const uint8_t peripheral_id = CONFIG_ZMK_SPLIT_ESB_PERIPHERAL_ID;
 
 /* Pressed-key bitmap, mirroring the BLE split's position_state[]. */
 static uint8_t position_state[ESB_KEY_STATE_LEN];
+
+/* Button bitmap: bit i = INPUT_BTN_0 + i is pressed. */
+static uint8_t button_state;
 
 static void publish_commands_work(struct k_work *work);
 
@@ -86,7 +90,7 @@ static ssize_t get_payload_data_size(const struct zmk_split_transport_peripheral
     }
 }
 
-/* Serialise the current position_state bitmap as an ESB_MSG_TYPE_KEY_STATE packet.
+/* Serialise the current key+button state as a KEY_STATE packet.
  * Idempotent: the central XORs with its previous state, so duplicates emit no events. */
 static int send_position_state(void) {
     int ret = k_sem_take(&esb_send_evt_sem, K_FOREVER);
@@ -108,10 +112,12 @@ static int send_position_state(void) {
     struct esb_key_state_envelope env = {
         .prefix = {
             .magic_prefix = ZMK_SPLIT_ESB_ENVELOPE_MAGIC_PREFIX,
-            .msg_type = ESB_MSG_TYPE_KEY_STATE,
             .payload_size = payload_size,
         },
-        .payload = {.source = peripheral_id},
+        .payload = {
+            .source = peripheral_id | ESB_SOURCE_KEY_STATE_FLAG,
+            .button_state = button_state,
+        },
     };
     memcpy(env.payload.state, position_state, ESB_KEY_STATE_LEN);
 
@@ -149,7 +155,23 @@ split_peripheral_esb_report_event(const struct zmk_split_transport_peripheral_ev
         return send_position_state();
     }
 
-    /* Generic path for input, sensor, and battery events. */
+    /* Route input button press/release through the idempotent state bitmap. */
+    if (event->type == ZMK_SPLIT_TRANSPORT_PERIPHERAL_EVENT_TYPE_INPUT_EVENT) {
+        const struct zmk_split_transport_peripheral_event *ie = event;
+        if (ie->data.input_event.type == INPUT_EV_KEY &&
+            ie->data.input_event.code >= INPUT_BTN_0 &&
+            ie->data.input_event.code < INPUT_BTN_0 + ESB_BTN_STATE_LEN) {
+            uint8_t bit = ie->data.input_event.code - INPUT_BTN_0;
+            if (ie->data.input_event.value) {
+                button_state |= BIT(bit);
+            } else {
+                button_state &= ~BIT(bit);
+            }
+            return send_position_state();
+        }
+    }
+
+    /* Generic path for mouse movement, sensor, and battery events. */
     ssize_t data_size = get_payload_data_size(event);
     if (data_size < 0) {
         LOG_WRN("Failed to determine payload data size %d", data_size);
@@ -176,7 +198,6 @@ split_peripheral_esb_report_event(const struct zmk_split_transport_peripheral_ev
     struct esb_event_envelope env = {
         .prefix = {
             .magic_prefix = ZMK_SPLIT_ESB_ENVELOPE_MAGIC_PREFIX,
-            .msg_type = ESB_MSG_TYPE_EVENT,
             .payload_size = payload_size,
         },
         .payload = {
