@@ -14,6 +14,17 @@
 
 #define ZMK_SPLIT_ESB_ENVELOPE_MAGIC_PREFIX "ZmKe"
 
+/* High bit of the source field in esb_key_state_payload signals a key+button
+ * state packet vs a generic event packet.  Peripheral IDs are always < 128,
+ * so BIT(7) is free for use as a discriminant without adding a header byte.
+ *
+ * KEY_STATE packets carry a full bitmap of pressed key positions (position N →
+ * byte N/8 bit N%8) plus a button-state byte (bit i = INPUT_BTN_0 + i).
+ * Sending full state on every change makes the data idempotent over ESB:
+ * duplicates XOR to zero diff and emit no phantom events.
+ */
+#define ESB_SOURCE_KEY_STATE_FLAG BIT(7)
+
 struct esb_msg_prefix {
     uint8_t magic_prefix[sizeof(ZMK_SPLIT_ESB_ENVELOPE_MAGIC_PREFIX) - 1];
     uint8_t payload_size;
@@ -37,6 +48,23 @@ struct esb_event_payload {
 struct esb_event_envelope {
     struct esb_msg_prefix prefix;
     struct esb_event_payload payload;
+} __packed;
+
+/* 128 key positions encoded as a bitmask. */
+#define ESB_KEY_STATE_LEN 16
+
+/* Button bitmap: bit i corresponds to INPUT_BTN_0 + i (up to 8 buttons). */
+#define ESB_BTN_STATE_LEN 8
+
+struct esb_key_state_payload {
+    uint8_t source;               /* peripheral_id | ESB_SOURCE_KEY_STATE_FLAG */
+    uint8_t state[ESB_KEY_STATE_LEN];
+    uint8_t button_state;         /* bit i = INPUT_BTN_0 + i pressed */
+} __packed;
+
+struct esb_key_state_envelope {
+    struct esb_msg_prefix prefix;
+    struct esb_key_state_payload payload;
 } __packed;
 
 struct esb_msg_postfix {

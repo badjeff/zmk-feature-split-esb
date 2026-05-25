@@ -80,7 +80,7 @@ static void event_handler(struct esb_evt const *event) {
             m_callback(&m_event);
             pull_packet_from_tx_msgq();
             break;
-        case ESB_EVENT_RX_RECEIVED:
+        case ESB_EVENT_RX_RECEIVED: {
             // LOG_DBG("RX SUCCESS");
             struct esb_payload rx_payload;
             uint8_t buf[CONFIG_ESB_MAX_PAYLOAD_LENGTH];
@@ -94,6 +94,7 @@ static void event_handler(struct esb_evt const *event) {
                 m_callback(&m_event);
             }
             break;
+        }
     }
 }
 

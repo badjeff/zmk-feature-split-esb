@@ -24,6 +24,7 @@ LOG_MODULE_DECLARE(zmk, CONFIG_ZMK_SPLIT_ESB_LOG_LEVEL);
 #include <zmk/events/position_state_changed.h>
 #include <zmk/events/sensor_event.h>
 #include <zmk/pointing/input_split.h>
+#include <zephyr/dt-bindings/input/input-event-codes.h>
 #include <zmk/hid_indicators_types.h>
 #include <zmk/physical_layouts.h>
 
@@ -43,6 +44,12 @@ RING_BUF_DECLARE(chosen_tx_buf, TX_BUFFER_SIZE);
 static K_SEM_DEFINE(esb_send_evt_sem, 1, 1);
 
 static const uint8_t peripheral_id = CONFIG_ZMK_SPLIT_ESB_PERIPHERAL_ID;
+
+/* Pressed-key bitmap, mirroring the BLE split's position_state[]. */
+static uint8_t position_state[ESB_KEY_STATE_LEN];
+
+/* Button bitmap: bit i = INPUT_BTN_0 + i is pressed. */
+static uint8_t button_state;
 
 static void publish_commands_work(struct k_work *work);
 
@@ -74,8 +81,6 @@ static ssize_t get_payload_data_size(const struct zmk_split_transport_peripheral
     switch (evt->type) {
     case ZMK_SPLIT_TRANSPORT_PERIPHERAL_EVENT_TYPE_INPUT_EVENT:
         return sizeof(evt->data.input_event);
-    case ZMK_SPLIT_TRANSPORT_PERIPHERAL_EVENT_TYPE_KEY_POSITION_EVENT:
-        return sizeof(evt->data.key_position_event);
     case ZMK_SPLIT_TRANSPORT_PERIPHERAL_EVENT_TYPE_SENSOR_EVENT:
         return sizeof(evt->data.sensor_event);
     case ZMK_SPLIT_TRANSPORT_PERIPHERAL_EVENT_TYPE_BATTERY_EVENT:
@@ -85,60 +90,136 @@ static ssize_t get_payload_data_size(const struct zmk_split_transport_peripheral
     }
 }
 
-static int
-split_peripheral_esb_report_event(const struct zmk_split_transport_peripheral_event *event) {
-    ssize_t data_size = get_payload_data_size(event);
-    if (data_size < 0) {
-        LOG_WRN("Failed to determine payload data size %d", data_size);
-        return data_size;
-    }
-
-    // lock it for a safe result from ring_buf_space_get()
+/* Serialise the current key+button state as a KEY_STATE packet.
+ * Idempotent: the central XORs with its previous state, so duplicates emit no events. */
+static int send_position_state(void) {
     int ret = k_sem_take(&esb_send_evt_sem, K_FOREVER);
     if (ret) {
         LOG_WRN("Shouldn't be called FOREVER");
         return 0;
     }
 
-    // Data + type + source
-    size_t payload_size =
-        data_size + sizeof(peripheral_id) + sizeof(enum zmk_split_transport_peripheral_event_type);
+    size_t payload_size = sizeof(struct esb_key_state_payload);
 
     if (ring_buf_space_get(&chosen_tx_buf) < ESB_MSG_EXTRA_SIZE + payload_size) {
-        LOG_WRN("No room to send peripheral to the central (have %d but only space for %d/%d)",
+        LOG_WRN("No room to send key state (have %d but only space for %d/%d)",
                 ESB_MSG_EXTRA_SIZE + payload_size, ring_buf_space_get(&chosen_tx_buf),
                 ring_buf_capacity_get(&chosen_tx_buf));
         k_sem_give(&esb_send_evt_sem);
         return -ENOSPC;
     }
 
-    struct esb_event_envelope env = {.prefix = {
-                                        .magic_prefix = ZMK_SPLIT_ESB_ENVELOPE_MAGIC_PREFIX,
-                                        .payload_size = payload_size,
-                                    },
-                                    .payload = {
-                                        .source = peripheral_id,
-                                        .event = *event,
-                                    }};
+    struct esb_key_state_envelope env = {
+        .prefix = {
+            .magic_prefix = ZMK_SPLIT_ESB_ENVELOPE_MAGIC_PREFIX,
+            .payload_size = payload_size,
+        },
+        .payload = {
+            .source = peripheral_id | ESB_SOURCE_KEY_STATE_FLAG,
+            .button_state = button_state,
+        },
+    };
+    memcpy(env.payload.state, position_state, ESB_KEY_STATE_LEN);
 
     size_t pfx_len = sizeof(env.prefix) + payload_size;
-    // LOG_HEXDUMP_DBG(&env, pfx_len, "Payload");
 
     size_t put = ring_buf_put(&chosen_tx_buf, (uint8_t *)&env, pfx_len);
     if (put != pfx_len) {
-        LOG_WRN("Failed to put the whole message (%d vs %d)", put, pfx_len);
+        LOG_WRN("Failed to put key state message (%d vs %d)", put, pfx_len);
     }
 
     struct esb_msg_postfix postfix = {.crc = crc32_ieee((void *)&env, pfx_len)};
-
     put = ring_buf_put(&chosen_tx_buf, (uint8_t *)&postfix, sizeof(postfix));
     if (put != sizeof(postfix)) {
-        LOG_WRN("Failed to put the postfix (%d vs %d)", put, sizeof(postfix));
+        LOG_WRN("Failed to put key state postfix (%d vs %d)", put, sizeof(postfix));
     }
-    // LOG_HEXDUMP_DBG(&postfix, sizeof(postfix), "postfix");
 
     begin_tx();
+    k_sem_give(&esb_send_evt_sem);
+    return 0;
+}
 
+static int
+split_peripheral_esb_report_event(const struct zmk_split_transport_peripheral_event *event) {
+    if (event->type == ZMK_SPLIT_TRANSPORT_PERIPHERAL_EVENT_TYPE_KEY_POSITION_EVENT) {
+        uint32_t pos = event->data.key_position_event.position;
+        if (pos >= (uint32_t)(ESB_KEY_STATE_LEN * 8)) {
+            LOG_WRN("Key position %u out of bitmap range (%u)", pos, ESB_KEY_STATE_LEN * 8);
+            return -EINVAL;
+        }
+        if (event->data.key_position_event.pressed) {
+            position_state[pos / 8] |= BIT(pos % 8);
+        } else {
+            position_state[pos / 8] &= ~BIT(pos % 8);
+        }
+        return send_position_state();
+    }
+
+    /* Route input button press/release through the idempotent state bitmap. */
+    if (event->type == ZMK_SPLIT_TRANSPORT_PERIPHERAL_EVENT_TYPE_INPUT_EVENT) {
+        const struct zmk_split_transport_peripheral_event *ie = event;
+        if (ie->data.input_event.type == INPUT_EV_KEY &&
+            ie->data.input_event.code >= INPUT_BTN_0 &&
+            ie->data.input_event.code < INPUT_BTN_0 + ESB_BTN_STATE_LEN) {
+            uint8_t bit = ie->data.input_event.code - INPUT_BTN_0;
+            if (ie->data.input_event.value) {
+                button_state |= BIT(bit);
+            } else {
+                button_state &= ~BIT(bit);
+            }
+            return send_position_state();
+        }
+    }
+
+    /* Generic path for mouse movement, sensor, and battery events. */
+    ssize_t data_size = get_payload_data_size(event);
+    if (data_size < 0) {
+        LOG_WRN("Failed to determine payload data size %d", data_size);
+        return data_size;
+    }
+
+    int ret = k_sem_take(&esb_send_evt_sem, K_FOREVER);
+    if (ret) {
+        LOG_WRN("Shouldn't be called FOREVER");
+        return 0;
+    }
+
+    size_t payload_size =
+        data_size + sizeof(peripheral_id) + sizeof(enum zmk_split_transport_peripheral_event_type);
+
+    if (ring_buf_space_get(&chosen_tx_buf) < ESB_MSG_EXTRA_SIZE + payload_size) {
+        LOG_WRN("No room to send event to the central (have %d but only space for %d/%d)",
+                ESB_MSG_EXTRA_SIZE + payload_size, ring_buf_space_get(&chosen_tx_buf),
+                ring_buf_capacity_get(&chosen_tx_buf));
+        k_sem_give(&esb_send_evt_sem);
+        return -ENOSPC;
+    }
+
+    struct esb_event_envelope env = {
+        .prefix = {
+            .magic_prefix = ZMK_SPLIT_ESB_ENVELOPE_MAGIC_PREFIX,
+            .payload_size = payload_size,
+        },
+        .payload = {
+            .source = peripheral_id,
+            .event = *event,
+        },
+    };
+
+    size_t pfx_len = sizeof(env.prefix) + payload_size;
+
+    size_t put = ring_buf_put(&chosen_tx_buf, (uint8_t *)&env, pfx_len);
+    if (put != pfx_len) {
+        LOG_WRN("Failed to put event message (%d vs %d)", put, pfx_len);
+    }
+
+    struct esb_msg_postfix postfix = {.crc = crc32_ieee((void *)&env, pfx_len)};
+    put = ring_buf_put(&chosen_tx_buf, (uint8_t *)&postfix, sizeof(postfix));
+    if (put != sizeof(postfix)) {
+        LOG_WRN("Failed to put event postfix (%d vs %d)", put, sizeof(postfix));
+    }
+
+    begin_tx();
     k_sem_give(&esb_send_evt_sem);
     return 0;
 }
