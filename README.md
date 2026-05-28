@@ -28,7 +28,7 @@ This module has ~~two~~one topologies.
    - Peripherals connects to Dongle via ESB with same ESB arbitrary address.
    - Min latency is 1ms.
    - Power consumption on TX is a bit less than BLE in long term, it does not keep connected to RX.
-   - Sample *zmk-config* for a [Corne 36 keys](https://github.com/foostan/crkbd) with couple [pointabella](https://github.com/badjeff/pointabella) variants and [moudabella](https://github.com/badjeff/moudabella) could be find at [here](https://github.com/badjeff/zmk-config/tree/main/config/boards/shields/donki36).
+   - Sample *zmk-config* for a [Corne 36 keys](https://github.com/foostan/crkbd) with couple [pointabella](https://github.com/badjeff/pointabella) variants and [moudabella](https://github.com/badjeff/moudabella) could be find at [here](https://github.com/badjeff/zmk-config/tree/esb-shield-only/boards/shields/donki36).
 - ~~Wireless Split Central or Dongle, with BOTH BLE and ESB is enabling.~~
    - ~~Split Central pairs to HID host via BLE.~~
    - ~~Split Peripherals connects to Split Central via ESB.~~
